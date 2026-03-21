@@ -43,13 +43,6 @@
   min-width: 0;
 }
 
-.brand-title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 .header h1 {
   margin: 0;
   font-size: 2rem;
@@ -126,21 +119,64 @@
   white-space: nowrap;
 }
 
-.app > .secondary-btn {
-  margin-bottom: 16px;
-}
-
-.auth-row {
+.auth-screen {
+  min-height: calc(100dvh - 80px);
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
+  justify-content: center;
 }
 
-.auth-email {
-  color: #cbd5e1;
+.auth-card {
+  width: min(440px, 100%);
+  background: #0b1324;
+  border: 1px solid #1e293b;
+  border-radius: 16px;
+  padding: 22px 18px;
+  display: grid;
+  gap: 14px;
+  text-align: center;
+}
+
+.auth-card h1 {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+.auth-subtitle {
+  margin: 0;
+  color: #94a3b8;
+}
+
+.google-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  background: #ffffff;
+  color: #3c4043;
+  border: 1px solid #dadce0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
   font-weight: 700;
+}
+
+.google-btn:hover {
+  background: #f8fafc;
+}
+
+.google-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+}
+
+.google-icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .sync-badge {

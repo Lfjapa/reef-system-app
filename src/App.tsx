@@ -635,7 +635,7 @@ const safeJsonParseArray = <T,>(raw: string | null, fallback: T[]) => {
 
 const NOW_AT_BOOT = Date.now()
 const DEFAULT_UI_SETTINGS: UiSettings = {
-  title: 'Reef System 300L',
+  title: 'Monitoramento do aquario',
   subtitle: 'Controle diário do aquário no PC e no celular',
   subtitleEnabled: true,
 }
@@ -854,13 +854,21 @@ function App() {
     }
     try {
       const parsed = JSON.parse(raw) as Partial<UiSettings>
-      const title = typeof parsed.title === 'string' ? parsed.title : DEFAULT_UI_SETTINGS.title
+      const rawTitle = typeof parsed.title === 'string' ? parsed.title : null
+      let title = rawTitle ?? DEFAULT_UI_SETTINGS.title
       const subtitle =
         typeof parsed.subtitle === 'string' ? parsed.subtitle : DEFAULT_UI_SETTINGS.subtitle
       const subtitleEnabled =
         typeof parsed.subtitleEnabled === 'boolean'
           ? parsed.subtitleEnabled
           : DEFAULT_UI_SETTINGS.subtitleEnabled
+      if (rawTitle === 'Reef System 300L') {
+        title = DEFAULT_UI_SETTINGS.title
+        localStorage.setItem(
+          uiSettingsStorageKey,
+          JSON.stringify({ title, subtitle, subtitleEnabled }),
+        )
+      }
       setUiSettings({ title, subtitle, subtitleEnabled })
     } catch {
       setUiSettings(DEFAULT_UI_SETTINGS)
@@ -953,12 +961,7 @@ function App() {
       <header className="header">
         <div className="header-top">
           <div className="brand">
-            <div className="brand-title-row">
-              <h1>{uiSettings.title}</h1>
-              <button type="button" className="secondary-btn" onClick={handleOpenSettings}>
-                Config
-              </button>
-            </div>
+            <h1>{uiSettings.title}</h1>
             {showSubtitle && <p className="header-subtitle">{uiSettings.subtitle}</p>}
             {message && <p className="header-message">{message}</p>}
           </div>
@@ -1008,12 +1011,13 @@ function App() {
           )}
         </div>
 
-        <span className={`sync-badge ${syncState}`}>
-          {syncState === 'online' && 'Sincronização online'}
-          {syncState === 'local' && 'Modo local'}
-          {syncState === 'syncing' && 'Sincronizando...'}
-          {syncState === 'error' && 'Falha na sincronização'}
-        </span>
+        {syncState !== 'local' && (
+          <span className={`sync-badge ${syncState}`}>
+            {syncState === 'online' && 'Sincronização online'}
+            {syncState === 'syncing' && 'Sincronizando...'}
+            {syncState === 'error' && 'Falha na sincronização'}
+          </span>
+        )}
       </header>
     )
   }
@@ -2029,19 +2033,40 @@ function App() {
     return (
       <main className="app">
         <Header mode="loading" message="Carregando login..." />
-        <SettingsModal />
       </main>
     )
   }
 
   if (isSupabaseEnabled && !authUser) {
     return (
-      <main className="app">
-        <Header mode="login" message="Entre com Google para ver apenas seus registros" />
-        <button type="button" className="secondary-btn" onClick={handleGoogleLogin}>
-          Entrar com Google
-        </button>
-        <SettingsModal />
+      <main className="app auth-screen">
+        <section className="auth-card">
+          <h1>{DEFAULT_UI_SETTINGS.title}</h1>
+          <p className="auth-subtitle">Entre com Google para ver apenas seus registros</p>
+          <button type="button" className="google-btn" onClick={handleGoogleLogin}>
+            <span className="google-icon" aria-hidden="true">
+              <svg viewBox="0 0 48 48">
+                <path
+                  fill="#EA4335"
+                  d="M24 9.5c3.1 0 5.9 1.1 8.1 3.2l6-6C34.5 3.2 29.6 1 24 1 14.9 1 7.1 6.2 3.3 13.8l7.4 5.7C12.6 13.6 17.9 9.5 24 9.5z"
+                />
+                <path
+                  fill="#4285F4"
+                  d="M46.5 24.5c0-1.6-.1-2.7-.4-4H24v7.6h12.8c-.3 2-1.7 5.1-4.9 7.2l7.5 5.8c4.4-4.1 7.1-10.2 7.1-17.6z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M10.7 28.4c-.5-1.4-.8-2.9-.8-4.4s.3-3 .8-4.4l-7.4-5.7C1.9 16.7 1 20.2 1 24s.9 7.3 2.3 10.1l7.4-5.7z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M24 47c5.6 0 10.3-1.8 13.7-5l-7.5-5.8c-2 1.4-4.7 2.4-6.2 2.4-6.1 0-11.4-4.1-13.3-9.9l-7.4 5.7C7.1 41.8 14.9 47 24 47z"
+                />
+              </svg>
+            </span>
+            Entrar com Google
+          </button>
+        </section>
       </main>
     )
   }
