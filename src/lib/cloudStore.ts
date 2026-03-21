@@ -307,3 +307,9 @@ export const upsertCloudLightingPhase = async (entry: CloudLightingPhase) => {
   })
   if (error) throw error
 }
+
+export const deleteCloudLightingPhase = async (id: string) => {
+  const client = ensureClient()
+  const { error } = await client.from('lighting_phases').delete().eq('id', id)
+  if (error) throw error
+}

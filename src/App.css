@@ -463,3 +463,31 @@
   color: var(--brand-ink);
   font-weight: 700;
 }
+
+@media (max-width: 520px) {
+  .tabs {
+    flex-wrap: wrap;
+  }
+
+  .tabs button {
+    padding: 9px 12px;
+    font-size: 0.95rem;
+  }
+
+  .modal-backdrop {
+    align-items: flex-start;
+  }
+
+  .modal {
+    max-height: calc(100dvh - 32px);
+    overflow: auto;
+  }
+
+  .modal-head {
+    flex-wrap: wrap;
+  }
+
+  .protocol-dose {
+    grid-template-columns: 1fr;
+  }
+}

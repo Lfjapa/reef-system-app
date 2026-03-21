@@ -4,6 +4,7 @@ import './App.css'
 import { isSupabaseEnabled } from './lib/supabase'
 import {
   deleteCloudBio,
+  deleteCloudLightingPhase,
   deleteCloudParameter,
   deleteCloudProtocolCheck,
   deleteCloudProtocolChecksByKey,
@@ -435,9 +436,9 @@ const timeToMinutes = (time: string) => {
 
 const normalizeTime = (value: string) => (value.length >= 5 ? value.slice(0, 5) : value)
 
-const defaultLightingPhases = (): LightingPhase[] => [
+const DEFAULT_LIGHTING_PHASES: LightingPhase[] = [
   {
-    id: crypto.randomUUID(),
+    id: '7f0e2d9b-3b1e-4d8c-9f5b-0d2d2a1a0001',
     name: 'Amanhecer',
     time: '08:30',
     uv: 60,
@@ -445,7 +446,7 @@ const defaultLightingPhases = (): LightingPhase[] => [
     blue: 120,
   },
   {
-    id: crypto.randomUUID(),
+    id: '7f0e2d9b-3b1e-4d8c-9f5b-0d2d2a1a0002',
     name: 'Subida',
     time: '10:30',
     uv: 150,
@@ -453,7 +454,7 @@ const defaultLightingPhases = (): LightingPhase[] => [
     blue: 160,
   },
   {
-    id: crypto.randomUUID(),
+    id: '7f0e2d9b-3b1e-4d8c-9f5b-0d2d2a1a0003',
     name: 'Pico (Suave)',
     time: '12:30',
     uv: 200,
@@ -461,7 +462,7 @@ const defaultLightingPhases = (): LightingPhase[] => [
     blue: 120,
   },
   {
-    id: crypto.randomUUID(),
+    id: '7f0e2d9b-3b1e-4d8c-9f5b-0d2d2a1a0004',
     name: 'Manutenção',
     time: '15:30',
     uv: 180,
@@ -469,7 +470,7 @@ const defaultLightingPhases = (): LightingPhase[] => [
     blue: 150,
   },
   {
-    id: crypto.randomUUID(),
+    id: '7f0e2d9b-3b1e-4d8c-9f5b-0d2d2a1a0005',
     name: 'Sunset (Neon)',
     time: '17:30',
     uv: 220,
@@ -477,7 +478,7 @@ const defaultLightingPhases = (): LightingPhase[] => [
     blue: 200,
   },
   {
-    id: crypto.randomUUID(),
+    id: '7f0e2d9b-3b1e-4d8c-9f5b-0d2d2a1a0006',
     name: 'Moonlight',
     time: '19:00',
     uv: 100,
@@ -485,7 +486,7 @@ const defaultLightingPhases = (): LightingPhase[] => [
     blue: 80,
   },
   {
-    id: crypto.randomUUID(),
+    id: '7f0e2d9b-3b1e-4d8c-9f5b-0d2d2a1a0007',
     name: 'Desligar',
     time: '19:30',
     uv: 0,
@@ -493,6 +494,43 @@ const defaultLightingPhases = (): LightingPhase[] => [
     blue: 0,
   },
 ]
+
+const DEFAULT_LIGHTING_BY_TIME = new Map(DEFAULT_LIGHTING_PHASES.map((phase) => [phase.time, phase]))
+
+const defaultLightingPhases = (): LightingPhase[] =>
+  DEFAULT_LIGHTING_PHASES.map((phase) => ({ ...phase }))
+
+const normalizeLightingFromCloud = (phases: LightingPhase[]) => {
+  const initialIds = phases.map((phase) => phase.id)
+  const seenTimes = new Set<string>()
+  const normalized: LightingPhase[] = []
+
+  for (const phase of [...phases].sort(
+    (a, b) => timeToMinutes(a.time) - timeToMinutes(b.time),
+  )) {
+    const time = normalizeTime(String(phase.time))
+    if (seenTimes.has(time)) continue
+    seenTimes.add(time)
+
+    const canonical = DEFAULT_LIGHTING_BY_TIME.get(time)
+    if (canonical) {
+      normalized.push({
+        ...phase,
+        id: canonical.id,
+        name: phase.name || canonical.name,
+        time,
+      })
+    } else {
+      normalized.push({ ...phase, time })
+    }
+  }
+
+  const normalizedIdSet = new Set(normalized.map((phase) => phase.id))
+  const idsToDelete = initialIds.filter((id) => !normalizedIdSet.has(id))
+  const needsWriteBack = idsToDelete.length > 0 || normalized.some((p) => !initialIds.includes(p.id))
+
+  return { normalized, idsToDelete, needsWriteBack }
+}
 
 const getStatus = (value: number, min?: number, max?: number) => {
   if (min === undefined || max === undefined) return 'Sem faixa'
@@ -887,18 +925,36 @@ function App() {
             note: item.note,
           })),
         )
-        setLightingPhases(
-          cloudData.lightingPhases.length
-            ? cloudData.lightingPhases.map((item) => ({
-                id: item.id,
-                name: item.name,
-                time: normalizeTime(String(item.time)),
-                uv: item.uv,
-                white: item.white,
-                blue: item.blue,
-              }))
-            : localLighting,
-        )
+        if (cloudData.lightingPhases.length) {
+          const mappedLighting = cloudData.lightingPhases.map((item) => ({
+            id: item.id,
+            name: item.name,
+            time: normalizeTime(String(item.time)),
+            uv: item.uv,
+            white: item.white,
+            blue: item.blue,
+          }))
+          const { normalized, idsToDelete, needsWriteBack } =
+            normalizeLightingFromCloud(mappedLighting)
+          if (needsWriteBack) {
+            await Promise.all([
+              ...normalized.map((item) =>
+                upsertCloudLightingPhase({
+                  id: item.id,
+                  name: item.name,
+                  time: item.time,
+                  uv: item.uv,
+                  white: item.white,
+                  blue: item.blue,
+                }),
+              ),
+              ...idsToDelete.map((id) => deleteCloudLightingPhase(id)),
+            ])
+          }
+          setLightingPhases(normalized)
+        } else {
+          setLightingPhases(localLighting)
+        }
         setSyncState('online')
       } catch {
         setEntries(localEntries)
