@@ -575,6 +575,15 @@
 }
 
 @media (max-width: 520px) {
+  .header-top {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .header h1 {
+    font-size: 1.7rem;
+  }
+
   .tabs {
     flex-wrap: wrap;
   }
