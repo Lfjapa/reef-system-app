@@ -23,19 +23,7 @@ import {
 } from './lib/cloudStore'
 import { getSession, onAuthStateChange, signInWithGoogle, signOut } from './lib/auth'
 
-type ParameterKey =
-  | 'kh'
-  | 'calcio'
-  | 'magnesio'
-  | 'salinidade'
-  | 'temperatura'
-  | 'ph'
-  | 'amonia'
-  | 'nitrito'
-  | 'nitrato'
-  | 'fosfato'
-  | 'silicato'
-  | 'iodo'
+type ParameterKey = string
 
 type ParameterEntry = {
   id: string
@@ -133,7 +121,7 @@ const parameterDefinitions: ParameterDefinition[] = [
   { key: 'iodo', label: 'Iodo/Estrôncio/Potássio', unit: 'ppm' },
 ]
 
-const parameterColors: Record<ParameterKey, string> = {
+const parameterColors: Record<string, string> = {
   kh: '#38bdf8',
   calcio: '#22d3ee',
   magnesio: '#14b8a6',
@@ -146,6 +134,21 @@ const parameterColors: Record<ParameterKey, string> = {
   fosfato: '#a78bfa',
   silicato: '#fb7185',
   iodo: '#facc15',
+}
+
+const hashToHue = (value: string) => {
+  let hash = 0
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash) % 360
+}
+
+const getSeriesColor = (key: string) => {
+  const known = parameterColors[key]
+  if (known) return known
+  const hue = hashToHue(key)
+  return `hsl(${hue} 70% 60%)`
 }
 
 const seedBioCatalog: BioCatalogEntry[] = [
@@ -547,56 +550,217 @@ const getStatus = (value: number, min?: number, max?: number) => {
   return 'Ideal'
 }
 
-const getTrend = (entries: ParameterEntry[]) => {
-  if (entries.length < 2) return 'Estável'
-  const sorted = [...entries].sort(
-    (a, b) => new Date(a.measuredAt).getTime() - new Date(b.measuredAt).getTime(),
-  )
-  const last = sorted[sorted.length - 1].value
-  const previous = sorted[sorted.length - 2].value
-  if (last > previous) return 'Subindo'
-  if (last < previous) return 'Descendo'
-  return 'Estável'
+type TrendArrow = 'up' | 'down' | 'flat'
+type InsightBadge = 'Ideal' | 'Atenção' | 'Crítico' | 'Sem faixa'
+
+type ParameterInsight = {
+  latest: ParameterEntry | null
+  previous: ParameterEntry | null
+  delta: number | null
+  daysBetween: number | null
+  dailyRate: number | null
+  arrow: TrendArrow
+  badge: InsightBadge
+  projectedDaysToBound: number | null
+  projectedBound: 'min' | 'max' | null
+  projectedDaysToCriticalMin: number | null
+  criticalMin: number | null
 }
 
-const buildMultiPath = (
-  values: ParameterEntry[],
-  minTimestamp: number,
-  maxTimestamp: number,
-  minValue: number,
-  maxValue: number,
-) => {
-  if (values.length < 2) return ''
-  const width = 320
-  const height = 120
-  const timestampRange = maxTimestamp - minTimestamp || 1
-  const valueRange = maxValue - minValue || 1
-  const points = values.map((entry) => {
-    const x =
-      ((new Date(entry.measuredAt).getTime() - minTimestamp) / timestampRange) * width
-    const y = height - ((entry.value - minValue) / valueRange) * height
-    return `${x},${y}`
-  })
-  return `M ${points.join(' L ')}`
+const TREND_WINDOW_DAYS = 7
+const MIN_RATE_INTERVAL_DAYS = 0.25
+
+const aggressiveDailyRateByParameter: Partial<Record<ParameterKey, number>> = {
+  kh: 0.5,
 }
 
-const buildMultiPoints = (
-  values: ParameterEntry[],
-  minTimestamp: number,
-  maxTimestamp: number,
-  minValue: number,
-  maxValue: number,
-) => {
-  const width = 320
-  const height = 120
-  const timestampRange = maxTimestamp - minTimestamp || 1
-  const valueRange = maxValue - minValue || 1
-  return values.map((entry) => {
-    const x =
-      ((new Date(entry.measuredAt).getTime() - minTimestamp) / timestampRange) * width
-    const y = height - ((entry.value - minValue) / valueRange) * height
-    return { x, y }
-  })
+const criticalLimitsByParameter: Partial<Record<ParameterKey, { min?: number; max?: number }>> = {
+  kh: { min: 6.5 },
+  ph: { min: 7.8, max: 8.5 },
+}
+
+const arrowSymbol: Record<TrendArrow, string> = {
+  up: '↑',
+  down: '↓',
+  flat: '→',
+}
+
+const formatSigned = (value: number, maximumFractionDigits: number) => {
+  const sign = value > 0 ? '+' : value < 0 ? '−' : ''
+  const abs = Math.abs(value)
+  const formatted = new Intl.NumberFormat('pt-BR', { maximumFractionDigits }).format(abs)
+  return `${sign}${formatted}`
+}
+
+const pickLatestEntry = (items: ParameterEntry[]) => {
+  let latest: ParameterEntry | null = null
+  for (const entry of items) {
+    if (!latest) {
+      latest = entry
+      continue
+    }
+    if (new Date(entry.measuredAt).getTime() > new Date(latest.measuredAt).getTime()) {
+      latest = entry
+    }
+  }
+  return latest
+}
+
+const computeParameterInsight = (
+  allEntries: ParameterEntry[],
+  definition: ParameterDefinition,
+): ParameterInsight => {
+  const items = allEntries
+    .filter((entry) => entry.parameter === definition.key)
+    .slice()
+    .sort((a, b) => new Date(a.measuredAt).getTime() - new Date(b.measuredAt).getTime())
+
+  const latest = items.length > 0 ? items[items.length - 1] : null
+  const previous = items.length > 1 ? items[items.length - 2] : null
+  const min = definition.min
+  const max = definition.max
+
+  let delta: number | null = null
+  let daysBetween: number | null = null
+  let dailyRate: number | null = null
+
+  if (latest && previous) {
+    delta = latest.value - previous.value
+    const diffMs = new Date(latest.measuredAt).getTime() - new Date(previous.measuredAt).getTime()
+    const diffDays = diffMs / 86400000
+    if (diffDays > 0) {
+      daysBetween = diffDays
+      if (diffDays >= MIN_RATE_INTERVAL_DAYS) dailyRate = delta / diffDays
+    }
+  }
+
+  const arrow: TrendArrow =
+    delta === null || Math.abs(delta) < 1e-12 ? 'flat' : delta > 0 ? 'up' : 'down'
+
+  const status = latest ? getStatus(latest.value, min, max) : 'Sem faixa'
+  let badge: InsightBadge =
+    status === 'Sem faixa' ? 'Sem faixa' : status === 'Ideal' ? 'Ideal' : 'Crítico'
+
+  let projectedDaysToBound: number | null = null
+  let projectedBound: 'min' | 'max' | null = null
+
+  if (latest && dailyRate !== null && min !== undefined && max !== undefined && status === 'Ideal') {
+    if (dailyRate < 0) {
+      const remaining = latest.value - min
+      if (remaining > 0) {
+        projectedDaysToBound = remaining / Math.abs(dailyRate)
+        projectedBound = 'min'
+      }
+    } else if (dailyRate > 0) {
+      const remaining = max - latest.value
+      if (remaining > 0) {
+        projectedDaysToBound = remaining / dailyRate
+        projectedBound = 'max'
+      }
+    }
+  }
+
+  const aggressiveThreshold = aggressiveDailyRateByParameter[definition.key]
+  if (badge === 'Ideal' && dailyRate !== null && aggressiveThreshold !== undefined) {
+    if (Math.abs(dailyRate) >= aggressiveThreshold) {
+      badge = 'Atenção'
+    }
+  }
+
+  if (
+    badge === 'Ideal' &&
+    projectedDaysToBound !== null &&
+    Number.isFinite(projectedDaysToBound) &&
+    projectedDaysToBound <= TREND_WINDOW_DAYS
+  ) {
+    badge = 'Atenção'
+  }
+
+  const criticalMin = criticalLimitsByParameter[definition.key]?.min ?? null
+  let projectedDaysToCriticalMin: number | null = null
+
+  if (latest && dailyRate !== null && criticalMin !== null && dailyRate < 0) {
+    const remaining = latest.value - criticalMin
+    if (remaining > 0) projectedDaysToCriticalMin = remaining / Math.abs(dailyRate)
+  }
+
+  return {
+    latest,
+    previous,
+    delta,
+    daysBetween,
+    dailyRate,
+    arrow,
+    badge,
+    projectedDaysToBound,
+    projectedBound,
+    projectedDaysToCriticalMin,
+    criticalMin,
+  }
+}
+
+type ChartPoint = { x: number; y: number }
+
+const buildMonotonePath = (points: ChartPoint[]) => {
+  if (points.length < 2) return ''
+  const n = points.length
+  const x = points.map((p) => p.x)
+  const y = points.map((p) => p.y)
+  const dx = new Array<number>(n - 1)
+  const m = new Array<number>(n - 1)
+
+  for (let i = 0; i < n - 1; i += 1) {
+    const dxi = x[i + 1] - x[i]
+    dx[i] = dxi === 0 ? 1 : dxi
+    m[i] = (y[i + 1] - y[i]) / dx[i]
+  }
+
+  const t = new Array<number>(n)
+  t[0] = m[0]
+  t[n - 1] = m[n - 2]
+
+  for (let i = 1; i < n - 1; i += 1) {
+    const m0 = m[i - 1]
+    const m1 = m[i]
+    if (m0 === 0 || m1 === 0 || m0 * m1 <= 0) {
+      t[i] = 0
+    } else {
+      t[i] = (m0 + m1) / 2
+    }
+  }
+
+  for (let i = 0; i < n - 1; i += 1) {
+    const mi = m[i]
+    if (mi === 0) {
+      t[i] = 0
+      t[i + 1] = 0
+      continue
+    }
+    const a = t[i] / mi
+    const b = t[i + 1] / mi
+    const s = a * a + b * b
+    if (s > 9) {
+      const r = 3 / Math.sqrt(s)
+      t[i] = r * a * mi
+      t[i + 1] = r * b * mi
+    }
+  }
+
+  const fmt = (value: number) => Number(value.toFixed(2))
+  let d = `M ${fmt(x[0])},${fmt(y[0])}`
+
+  for (let i = 0; i < n - 1; i += 1) {
+    const h = x[i + 1] - x[i]
+    const c1x = x[i] + h / 3
+    const c1y = y[i] + (t[i] * h) / 3
+    const c2x = x[i + 1] - h / 3
+    const c2y = y[i + 1] - (t[i + 1] * h) / 3
+    d += ` C ${fmt(c1x)},${fmt(c1y)} ${fmt(c2x)},${fmt(c2y)} ${fmt(x[i + 1])},${fmt(
+      y[i + 1],
+    )}`
+  }
+
+  return d
 }
 
 const normalizeParameterValue = (parameter: ParameterKey, rawValue: number) => {
@@ -697,6 +861,21 @@ function App() {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState<boolean>(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false)
   const [uiSettings, setUiSettings] = useState<UiSettings>(DEFAULT_UI_SETTINGS)
+  const [parameterAlert, setParameterAlert] = useState<{ title: string; message: string } | null>(
+    null,
+  )
+  const [lastMeasurementFeedback, setLastMeasurementFeedback] = useState<{
+    parameter: ParameterKey
+    value: number
+    measuredAt: string
+    previousValue: number | null
+    delta: number | null
+    daysBetween: number | null
+    dailyRate: number | null
+    protocolLabel: string | null
+    protocolPerformedAt: string | null
+    deltaSinceProtocol: number | null
+  } | null>(null)
   const avatarInputRef = useRef<HTMLInputElement | null>(null)
 
   const entriesStorageKey = isSupabaseEnabled
@@ -943,6 +1122,32 @@ function App() {
               <button type="submit">Salvar</button>
             </div>
           </form>
+        </div>
+      </div>
+    )
+  }
+
+  const ParameterAlertModal = () => {
+    if (!parameterAlert) return null
+    return (
+      <div className="modal-backdrop" role="dialog" aria-modal="true">
+        <div className="modal">
+          <div className="modal-head">
+            <h3>{parameterAlert.title}</h3>
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => setParameterAlert(null)}
+            >
+              Fechar
+            </button>
+          </div>
+          <p className="modal-text">{parameterAlert.message}</p>
+          <div className="modal-actions">
+            <button type="button" onClick={() => setParameterAlert(null)}>
+              Entendi
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -1436,51 +1641,204 @@ function App() {
       )
   }, [dashboardPeriodDays, entries, nowMs])
 
-  const chartSeries = useMemo(() => {
-    return parameterDefinitions
-      .map((definition) => ({
-        definition,
-        entries: dashboardEntries.filter((entry) => entry.parameter === definition.key),
-      }))
-      .filter((item) => item.entries.length > 0)
-  }, [dashboardEntries])
-
-  const chartLimits = useMemo(() => {
-    if (dashboardEntries.length === 0) return null
-    const timestamps = dashboardEntries.map((entry) =>
-      new Date(entry.measuredAt).getTime(),
-    )
-    const values = dashboardEntries.map((entry) => entry.value)
-    return {
-      minTimestamp: Math.min(...timestamps),
-      maxTimestamp: Math.max(...timestamps),
-      minValue: Math.min(...values),
-      maxValue: Math.max(...values),
-    }
-  }, [dashboardEntries])
-
   const chartPaths = useMemo(() => {
-    if (!chartLimits) return []
-    return chartSeries.map((series) => ({
-      key: series.definition.key,
-      label: series.definition.label,
-      color: parameterColors[series.definition.key],
-      path: buildMultiPath(
-        series.entries,
-        chartLimits.minTimestamp,
-        chartLimits.maxTimestamp,
-        chartLimits.minValue,
-        chartLimits.maxValue,
-      ),
-      points: buildMultiPoints(
-        series.entries,
-        chartLimits.minTimestamp,
-        chartLimits.maxTimestamp,
-        chartLimits.minValue,
-        chartLimits.maxValue,
-      ),
-    }))
-  }, [chartLimits, chartSeries])
+    if (dashboardEntries.length === 0) return []
+    const width = 320
+    const height = 120
+    const paddingTop = 14
+    const paddingBottom = 10
+
+    const orderMap = new Map<string, number>()
+    parameterDefinitions.forEach((definition, index) => {
+      orderMap.set(definition.key, index)
+    })
+
+    const entriesByKey = new Map<string, ParameterEntry[]>()
+    for (const entry of dashboardEntries) {
+      const list = entriesByKey.get(entry.parameter)
+      if (list) list.push(entry)
+      else entriesByKey.set(entry.parameter, [entry])
+    }
+
+    const keys = Array.from(entriesByKey.keys()).sort((a, b) => {
+      const ao = orderMap.get(a)
+      const bo = orderMap.get(b)
+      if (ao !== undefined && bo !== undefined) return ao - bo
+      if (ao !== undefined) return -1
+      if (bo !== undefined) return 1
+      return a.localeCompare(b, 'pt-BR')
+    })
+
+    const laneCount = keys.length
+    let laneGap = laneCount <= 6 ? 10 : laneCount <= 10 ? 6 : 3
+    let laneHeight =
+      laneCount > 0 ? (height - paddingTop - paddingBottom - (laneCount - 1) * laneGap) / laneCount : 0
+    if (laneHeight < 8) {
+      laneGap = 2
+      laneHeight =
+        laneCount > 0
+          ? (height - paddingTop - paddingBottom - (laneCount - 1) * laneGap) / laneCount
+          : 0
+    }
+    laneHeight = Math.max(5, laneHeight)
+
+    return keys
+      .map((key, laneIndex) => {
+        const seriesEntries =
+          entriesByKey.get(key)?.slice().sort((a, b) => {
+            return new Date(a.measuredAt).getTime() - new Date(b.measuredAt).getTime()
+          }) ?? []
+        if (seriesEntries.length === 0) return null
+
+        const seriesTimestamps = seriesEntries.map((entry) => new Date(entry.measuredAt).getTime())
+        const minTimestamp = Math.min(...seriesTimestamps)
+        const maxTimestamp = Math.max(...seriesTimestamps)
+        const timestampRange = maxTimestamp - minTimestamp || 1
+
+        const definition = parameterDefinitions.find((d) => d.key === key)
+        const label = definition?.label ?? key
+        const color = getSeriesColor(key)
+
+        const values = seriesEntries.map((entry) => entry.value)
+        const minValue = Math.min(...values)
+        const maxValue = Math.max(...values)
+        const range = maxValue - minValue
+
+        const laneTop = paddingTop + laneIndex * (laneHeight + laneGap)
+        const points: ChartPoint[] = seriesEntries.map((entry) => {
+          const x =
+            ((new Date(entry.measuredAt).getTime() - minTimestamp) / timestampRange) * width
+          const normalized = range === 0 ? 0.5 : (entry.value - minValue) / range
+          const y = laneTop + laneHeight - normalized * laneHeight
+          return { x, y }
+        })
+
+        const pointsInLane = points.map((point) => ({ x: point.x, y: point.y - laneTop }))
+
+        return {
+          key,
+          label,
+          color,
+          laneIndex,
+          laneTop,
+          laneHeight,
+          laneGap,
+          path: buildMonotonePath(points),
+          points,
+          lanePath: buildMonotonePath(pointsInLane),
+          lanePoints: pointsInLane,
+        }
+      })
+      .filter(
+        (
+          value,
+        ): value is {
+          key: string
+          label: string
+          color: string
+          laneIndex: number
+          laneTop: number
+          laneHeight: number
+          laneGap: number
+          path: string
+          points: ChartPoint[]
+          lanePath: string
+          lanePoints: ChartPoint[]
+        } => Boolean(value),
+      )
+  }, [dashboardEntries])
+
+  const parameterInsights = useMemo(() => {
+    const map = new Map<ParameterKey, ParameterInsight>()
+    for (const definition of parameterDefinitions) {
+      map.set(definition.key, computeParameterInsight(entries, definition))
+    }
+    return map
+  }, [entries])
+
+  const dashboardInsightCards = useMemo(() => {
+    const candidates = parameterDefinitions
+      .map((definition) => ({ definition, insight: parameterInsights.get(definition.key) ?? null }))
+      .filter(
+        (item) =>
+          item.insight?.latest &&
+          item.insight.dailyRate !== null &&
+          Number.isFinite(item.insight.dailyRate),
+      )
+      .sort(
+        (a, b) =>
+          Math.abs((b.insight?.dailyRate ?? 0) as number) -
+          Math.abs((a.insight?.dailyRate ?? 0) as number),
+      )
+      .slice(0, 4)
+
+    return candidates
+      .map(({ definition, insight }) => {
+        const latest = insight?.latest
+        if (!latest || insight?.dailyRate === null) return null
+        const rate = insight.dailyRate
+        const isConsumption = rate < 0 && ['kh', 'calcio', 'magnesio'].includes(definition.key)
+        const metricLabel = isConsumption ? 'Consumo estimado' : 'Variação estimada'
+        const rateLabel = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(
+          isConsumption ? Math.abs(rate) : rate,
+        )
+        const rateSuffix = definition.unit ? ` ${definition.unit}/dia` : ' /dia'
+        const daysLabel =
+          insight.daysBetween !== null
+            ? ` (base: ${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(insight.daysBetween)} dias)`
+            : ''
+
+        let autonomy = ''
+        if (
+          insight.projectedDaysToCriticalMin !== null &&
+          Number.isFinite(insight.projectedDaysToCriticalMin)
+        ) {
+          autonomy = ` · Limite em ~${new Intl.NumberFormat('pt-BR', {
+            maximumFractionDigits: 0,
+          }).format(insight.projectedDaysToCriticalMin)} dias`
+        } else if (
+          insight.projectedDaysToBound !== null &&
+          Number.isFinite(insight.projectedDaysToBound)
+        ) {
+          autonomy = ` · Sai do ideal em ~${new Intl.NumberFormat('pt-BR', {
+            maximumFractionDigits: 0,
+          }).format(insight.projectedDaysToBound)} dias`
+        }
+
+        return `${definition.label}: ${metricLabel} ${rateLabel}${rateSuffix}${daysLabel}${autonomy}`
+      })
+      .filter((value): value is string => Boolean(value))
+  }, [parameterInsights])
+
+  const dashboardAlertCards = useMemo(() => {
+    return parameterDefinitions
+      .map((definition) => {
+        const insight = parameterInsights.get(definition.key)
+        const latest = insight?.latest ?? null
+        if (!insight || !latest) return null
+        if (insight.badge === 'Ideal' || insight.badge === 'Sem faixa') return null
+
+        const valueLabel = `${new Intl.NumberFormat('pt-BR', {
+          maximumFractionDigits: 3,
+        }).format(latest.value)}${definition.unit ? ` ${definition.unit}` : ''}`.trim()
+
+        const rateLabel =
+          insight.dailyRate !== null && Number.isFinite(insight.dailyRate)
+            ? `${formatSigned(insight.dailyRate, 3)}${definition.unit ? ` ${definition.unit}/dia` : ' /dia'}`
+            : null
+
+        const autonomyLabel =
+          insight.projectedDaysToCriticalMin !== null && Number.isFinite(insight.projectedDaysToCriticalMin)
+            ? `Limite em ~${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(insight.projectedDaysToCriticalMin)} dias`
+            : insight.projectedDaysToBound !== null && Number.isFinite(insight.projectedDaysToBound)
+              ? `Sai do ideal em ~${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(insight.projectedDaysToBound)} dias`
+              : null
+
+        const details = [rateLabel, autonomyLabel].filter(Boolean).join(' · ')
+        return `${definition.label}: ${valueLabel} · ${insight.badge}${details ? ` · ${details}` : ''}`
+      })
+      .filter((value): value is string => Boolean(value))
+  }, [parameterInsights])
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -1494,16 +1852,91 @@ function App() {
       measuredAt: new Date().toISOString(),
       note,
     }
+
+    const previousEntry = pickLatestEntry(
+      entries.filter((entry) => entry.parameter === newEntry.parameter),
+    )
+    const delta = previousEntry ? newEntry.value - previousEntry.value : null
+    const daysBetween =
+      previousEntry !== null
+        ? (new Date(newEntry.measuredAt).getTime() - new Date(previousEntry.measuredAt).getTime()) /
+          86400000
+        : null
+    const dailyRate =
+      delta !== null && daysBetween !== null && daysBetween >= MIN_RATE_INTERVAL_DAYS
+        ? delta / daysBetween
+        : null
+
+    const performedAtMs = new Date(newEntry.measuredAt).getTime()
+    const latestProtocolLog =
+      protocolLogs
+        .filter((log) => new Date(log.performedAt).getTime() <= performedAtMs)
+        .slice()
+        .sort((a, b) => new Date(b.performedAt).getTime() - new Date(a.performedAt).getTime())[0] ??
+      null
+    const protocolLabel =
+      latestProtocolLog?.protocolKey
+        ? protocolDefinitions.find((d) => d.key === latestProtocolLog.protocolKey)?.label ?? null
+        : null
+
+    let deltaSinceProtocol: number | null = null
+    if (latestProtocolLog) {
+      const latestParameterBeforeProtocol = pickLatestEntry(
+        entries
+          .filter((entry) => entry.parameter === newEntry.parameter)
+          .filter(
+            (entry) =>
+              new Date(entry.measuredAt).getTime() <=
+              new Date(latestProtocolLog.performedAt).getTime(),
+          ),
+      )
+      if (latestParameterBeforeProtocol) {
+        deltaSinceProtocol = newEntry.value - latestParameterBeforeProtocol.value
+      }
+    }
+
+    setLastMeasurementFeedback({
+      parameter: newEntry.parameter,
+      value: newEntry.value,
+      measuredAt: newEntry.measuredAt,
+      previousValue: previousEntry?.value ?? null,
+      delta,
+      daysBetween: daysBetween !== null && Number.isFinite(daysBetween) ? daysBetween : null,
+      dailyRate,
+      protocolLabel,
+      protocolPerformedAt: latestProtocolLog?.performedAt ?? null,
+      deltaSinceProtocol,
+    })
+
+    if (newEntry.parameter === 'ph') {
+      const minCritical = criticalLimitsByParameter.ph?.min
+      const maxCritical = criticalLimitsByParameter.ph?.max
+      if (
+        (minCritical !== undefined && newEntry.value < minCritical) ||
+        (maxCritical !== undefined && newEntry.value > maxCritical)
+      ) {
+        const rangeLabel =
+          minCritical !== undefined && maxCritical !== undefined
+            ? `${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(minCritical)}–${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(maxCritical)}`
+            : ''
+        const message =
+          minCritical !== undefined && newEntry.value < minCritical
+            ? `pH abaixo do recomendado (${rangeLabel}). Causas comuns: CO₂ alto no ambiente, baixa aeração/troca gasosa, excesso de carga orgânica, efluente ácido de reator de cálcio. Ações seguras: aumentar aeração, melhorar captação de ar do skimmer (ou scrubber de CO₂), conferir alcalinidade e evitar correções bruscas.`
+            : `pH acima do recomendado (${rangeLabel}). Causas comuns: excesso de kalkwasser/álcali, fotoperíodo e macroalgas elevando pH no pico, baixa disponibilidade de CO₂. Ações seguras: reduzir correções, revisar dosagens e confirmar leitura (calibração/sonda/teste).`
+        setParameterAlert({ title: 'Alerta de pH', message })
+      }
+    }
+
     setEntries((current) => [...current, newEntry])
     if (isSupabaseEnabled && authUser) {
       try {
         await upsertCloudParameter(
           {
-          id: newEntry.id,
-          parameter: newEntry.parameter,
-          value: newEntry.value,
-          measuredAt: newEntry.measuredAt,
-          note: newEntry.note,
+            id: newEntry.id,
+            parameter: newEntry.parameter,
+            value: newEntry.value,
+            measuredAt: newEntry.measuredAt,
+            note: newEntry.note,
           },
           authUser.id,
         )
@@ -1743,6 +2176,10 @@ function App() {
     [todayKey],
   )
   const protocolWeekStartKey = useMemo(() => toDateKey(protocolWeekStart), [protocolWeekStart])
+  const todayProtocolDayIndex = useMemo(() => {
+    const date = fromDateKey(todayKey)
+    return ((date.getDay() + 6) % 7) + 1
+  }, [todayKey])
 
   const protocolChecksSorted = useMemo(() => {
     return protocolChecks
@@ -1769,6 +2206,24 @@ function App() {
     }
     return set
   }, [protocolChecks, protocolWeekStartKey])
+
+  const protocolsDueToday = useMemo(() => {
+    return protocolDefinitions
+      .filter((definition) => definition.days.includes(todayProtocolDayIndex))
+      .map((definition) => {
+        const done = protocolDoneSet.has(`${definition.key}:${todayProtocolDayIndex}`)
+        const latest = latestProtocolByKey.get(definition.key) ?? null
+        const doseLabel =
+          definition.quantity === null
+            ? 'Sem quantidade'
+            : `${definition.quantity} ${definition.unit}`.trim()
+        return { definition, done, latest, doseLabel }
+      })
+      .filter((item) => !item.done)
+      .sort((a, b) => {
+        return a.definition.label.localeCompare(b.definition.label, 'pt-BR')
+      })
+  }, [latestProtocolByKey, protocolDefinitions, protocolDoneSet, todayProtocolDayIndex])
 
   const isDoneThisWeek = (key: ProtocolKey, dayIndex: number) => {
     return protocolDoneSet.has(`${key}:${dayIndex}`)
@@ -2074,6 +2529,7 @@ function App() {
   return (
     <main className="app">
       <Header mode="main" />
+      <ParameterAlertModal />
       <SettingsModal />
 
       <nav className="tabs">
@@ -2120,21 +2576,57 @@ function App() {
                 const bTime = b.latest ? new Date(b.latest.measuredAt).getTime() : 0
                 return bTime - aTime
               })
-              .map(({ definition, latest }) => (
-                <article key={definition.key} className="card">
-                  <span>{definition.label}</span>
-                  <strong>
-                    {latest
-                      ? `${latest.value} ${definition.unit}`.trim()
-                      : 'Sem medição'}
-                  </strong>
-                  <small>
-                    {latest
-                      ? `${getStatus(latest.value, definition.min, definition.max)} · ${getTrend(entries.filter((entry) => entry.parameter === definition.key))}`
-                      : 'Sem histórico'}
-                  </small>
-                </article>
-              ))}
+              .map(({ definition, latest }) => {
+                const insight = parameterInsights.get(definition.key)
+                const projectedDaysToCriticalMin = insight?.projectedDaysToCriticalMin ?? null
+                const projectedDaysToBound = insight?.projectedDaysToBound ?? null
+                const badgeClass =
+                  insight?.badge === 'Ideal'
+                    ? 'ideal'
+                    : insight?.badge === 'Atenção'
+                      ? 'attention'
+                      : insight?.badge === 'Crítico'
+                        ? 'critical'
+                        : 'neutral'
+                const rateLabel =
+                  insight?.dailyRate !== null && insight?.dailyRate !== undefined
+                    ? `${formatSigned(insight.dailyRate, 3)}${definition.unit ? ` ${definition.unit}/dia` : ' /dia'}`
+                    : null
+                const autonomyLabel =
+                  projectedDaysToCriticalMin !== null && Number.isFinite(projectedDaysToCriticalMin)
+                    ? `Limite em ~${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(projectedDaysToCriticalMin)} dias`
+                    : projectedDaysToBound !== null && Number.isFinite(projectedDaysToBound)
+                      ? `Sai do ideal em ~${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(projectedDaysToBound)} dias`
+                      : null
+                return (
+                  <article key={definition.key} className="card">
+                    <span>{definition.label}</span>
+                    <strong>
+                      {latest ? (
+                        <>
+                          <span className={`trend-arrow ${insight?.arrow ?? 'flat'}`}>
+                            {arrowSymbol[insight?.arrow ?? 'flat']}
+                          </span>{' '}
+                          {`${latest.value} ${definition.unit}`.trim()}
+                        </>
+                      ) : (
+                        'Sem medição'
+                      )}
+                    </strong>
+                    <small>
+                      {latest && insight ? (
+                        <>
+                          <span className={`status-badge ${badgeClass}`}>{insight.badge}</span>
+                          {rateLabel ? ` · ${rateLabel}` : ''}
+                          {autonomyLabel ? ` · ${autonomyLabel}` : ''}
+                        </>
+                      ) : (
+                        'Sem histórico'
+                      )}
+                    </small>
+                  </article>
+                )
+              })}
           </div>
 
           <div className="chart-box">
@@ -2152,22 +2644,61 @@ function App() {
                 <option value={365}>Último ano</option>
               </select>
             </div>
-            <svg viewBox="0 0 320 120" className="chart">
+            <div className="chart-frame">
+              <svg viewBox="0 0 320 120" className="chart">
+                {chartPaths.map((item) => (
+                  <g key={item.key}>
+                    {item.laneHeight >= 10 && (
+                      <text x={0} y={item.laneTop - 4} fill="#94a3b8" fontSize={9}>
+                        {item.label}
+                      </text>
+                    )}
+                    {item.laneHeight >= 8 && (
+                      <line
+                        x1={0}
+                        y1={item.laneTop + item.laneHeight}
+                        x2={320}
+                        y2={item.laneTop + item.laneHeight}
+                        stroke="rgba(148, 163, 184, 0.14)"
+                      />
+                    )}
+                    {item.path && <path d={item.path} stroke={item.color} />}
+                    {item.points.map((point, index) => (
+                      <circle
+                        key={`${item.key}-${index}`}
+                        cx={point.x}
+                        cy={point.y}
+                        r={2.4}
+                        fill={item.color}
+                      />
+                    ))}
+                  </g>
+                ))}
+              </svg>
+            </div>
+            <div className="chart-mobile-list">
               {chartPaths.map((item) => (
-                <g key={item.key}>
-                  {item.path && <path d={item.path} stroke={item.color} />}
-                  {item.points.map((point, index) => (
-                    <circle
-                      key={`${item.key}-${index}`}
-                      cx={point.x}
-                      cy={point.y}
-                      r={2.7}
-                      fill={item.color}
-                    />
-                  ))}
-                </g>
+                <div key={item.key} className="chart-mobile-item">
+                  <div className="chart-mobile-head">
+                    <span className="chart-mobile-dot" style={{ backgroundColor: item.color }}></span>
+                    <strong>{item.label}</strong>
+                  </div>
+                  <svg viewBox={`0 0 320 ${item.laneHeight}`} className="chart-mobile-spark">
+                    {item.lanePath && <path d={item.lanePath} stroke={item.color} />}
+                    {item.lanePoints.map((point, index) => (
+                      <circle
+                        key={`${item.key}-m-${index}`}
+                        cx={point.x}
+                        cy={point.y}
+                        r={2.2}
+                        fill={item.color}
+                      />
+                    ))}
+                  </svg>
+                </div>
               ))}
-            </svg>
+              {chartPaths.length === 0 && <span>Sem registros no período.</span>}
+            </div>
             <div className="legend">
               {chartPaths.map((item) => (
                 <span key={item.key} className="legend-item">
@@ -2176,6 +2707,71 @@ function App() {
                 </span>
               ))}
               {chartPaths.length === 0 && <span>Sem registros no período.</span>}
+            </div>
+            {chartPaths.length > 0 && (
+              <div className="chart-note">
+                Escala: normalização 0–100% e tempo por parâmetro (início à esquerda).
+              </div>
+            )}
+          </div>
+
+          <div className="intelligence">
+            <div className="intelligence-head">
+              <h3>Informações</h3>
+              <p>Insights, alertas e lembretes do dia</p>
+            </div>
+
+            {dashboardAlertCards.length > 0 && (
+              <div className="intelligence-block">
+                <h4>Alertas</h4>
+                <div className="insights">
+                  {dashboardAlertCards.map((text) => (
+                    <div key={text} className="insight-card">
+                      {text}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {dashboardInsightCards.length > 0 && (
+              <div className="intelligence-block">
+                <h4>Análises</h4>
+                <div className="insights">
+                  {dashboardInsightCards.map((text) => (
+                    <div key={text} className="insight-card">
+                      {text}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="intelligence-block">
+              <h4>Protocolos de hoje ({dayLabels[(todayProtocolDayIndex + 6) % 7]})</h4>
+              {protocolsDueToday.length === 0 ? (
+                <p className="intelligence-empty">Sem rotinas pendentes para hoje.</p>
+              ) : (
+                <div className="today-protocols">
+                  {protocolsDueToday.map((item) => (
+                    <div key={item.definition.key} className="today-protocol-item">
+                      <div className="today-protocol-main">
+                        <strong>{item.definition.label}</strong>
+                        <span className="today-protocol-meta">
+                          {item.doseLabel}
+                          {item.latest ? ` · Último: ${formatDate(item.latest.checkedAt)}` : ''}
+                        </span>
+                      </div>
+                      <button
+                        className="week-check"
+                        onClick={() => void handleToggleProtocolCheck(item.definition.key, todayProtocolDayIndex)}
+                      >
+                        Pendente
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -2219,6 +2815,56 @@ function App() {
             </label>
             <button type="submit">Salvar medição</button>
           </form>
+
+          {lastMeasurementFeedback && (
+            <div className="insight-box">
+              <strong>Resumo do último registro</strong>
+              <div className="insight-lines">
+                <span>
+                  {parameterDefinitions.find((d) => d.key === lastMeasurementFeedback.parameter)?.label}{' '}
+                  em {formatDate(lastMeasurementFeedback.measuredAt)}:{' '}
+                  {new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(
+                    lastMeasurementFeedback.value,
+                  )}
+                </span>
+                {lastMeasurementFeedback.daysBetween !== null &&
+                  Number.isFinite(lastMeasurementFeedback.daysBetween) && (
+                    <span>
+                      Intervalo:{' '}
+                      {lastMeasurementFeedback.daysBetween < 1
+                        ? `${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(lastMeasurementFeedback.daysBetween * 24)} h`
+                        : `${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(lastMeasurementFeedback.daysBetween)} dias`}
+                    </span>
+                  )}
+                {lastMeasurementFeedback.previousValue !== null &&
+                  lastMeasurementFeedback.delta !== null && (
+                    <span>
+                      Δ vs anterior: {formatSigned(lastMeasurementFeedback.delta, 3)}
+                      {lastMeasurementFeedback.dailyRate !== null &&
+                        Number.isFinite(lastMeasurementFeedback.dailyRate) && (
+                          <>
+                            {' '}
+                            · Taxa diária: {formatSigned(lastMeasurementFeedback.dailyRate, 3)}
+                            {parameterDefinitions.find((d) => d.key === lastMeasurementFeedback.parameter)
+                              ?.unit
+                              ? ` ${parameterDefinitions.find((d) => d.key === lastMeasurementFeedback.parameter)?.unit}/dia`
+                              : ' /dia'}
+                          </>
+                        )}
+                    </span>
+                  )}
+                {lastMeasurementFeedback.protocolLabel &&
+                  lastMeasurementFeedback.protocolPerformedAt &&
+                  lastMeasurementFeedback.deltaSinceProtocol !== null && (
+                    <span>
+                      Desde a última dosagem ({lastMeasurementFeedback.protocolLabel} em{' '}
+                      {formatDate(lastMeasurementFeedback.protocolPerformedAt)}): Δ{' '}
+                      {formatSigned(lastMeasurementFeedback.deltaSinceProtocol, 3)}
+                    </span>
+                  )}
+              </div>
+            </div>
+          )}
 
           <div className="filters">
             <select
