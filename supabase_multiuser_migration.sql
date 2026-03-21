@@ -1,0 +1,112 @@
+do $$
+declare
+  owner_id uuid := '00000000-0000-0000-0000-000000000000';
+begin
+  alter table if exists public.parameter_entries
+    add column if not exists user_id uuid references auth.users(id) on delete cascade;
+  alter table if exists public.bio_entries
+    add column if not exists user_id uuid references auth.users(id) on delete cascade;
+  alter table if exists public.bio_catalog
+    add column if not exists user_id uuid references auth.users(id) on delete cascade;
+  alter table if exists public.protocol_logs
+    add column if not exists user_id uuid references auth.users(id) on delete cascade;
+  alter table if exists public.protocol_definitions
+    add column if not exists user_id uuid references auth.users(id) on delete cascade;
+  alter table if exists public.protocol_checks
+    add column if not exists user_id uuid references auth.users(id) on delete cascade;
+  alter table if exists public.lighting_phases
+    add column if not exists user_id uuid references auth.users(id) on delete cascade;
+
+  update public.parameter_entries set user_id = owner_id where user_id is null;
+  update public.bio_entries set user_id = owner_id where user_id is null;
+  update public.bio_catalog set user_id = owner_id where user_id is null;
+  update public.protocol_logs set user_id = owner_id where user_id is null;
+  update public.protocol_definitions set user_id = owner_id where user_id is null;
+  update public.protocol_checks set user_id = owner_id where user_id is null;
+  update public.lighting_phases set user_id = owner_id where user_id is null;
+
+  alter table public.parameter_entries alter column user_id set default auth.uid();
+  alter table public.bio_entries alter column user_id set default auth.uid();
+  alter table public.bio_catalog alter column user_id set default auth.uid();
+  alter table public.protocol_logs alter column user_id set default auth.uid();
+  alter table public.protocol_definitions alter column user_id set default auth.uid();
+  alter table public.protocol_checks alter column user_id set default auth.uid();
+  alter table public.lighting_phases alter column user_id set default auth.uid();
+
+  alter table public.parameter_entries alter column user_id set not null;
+  alter table public.bio_entries alter column user_id set not null;
+  alter table public.bio_catalog alter column user_id set not null;
+  alter table public.protocol_logs alter column user_id set not null;
+  alter table public.protocol_definitions alter column user_id set not null;
+  alter table public.protocol_checks alter column user_id set not null;
+  alter table public.lighting_phases alter column user_id set not null;
+end $$;
+
+alter table if exists public.bio_catalog drop constraint if exists bio_catalog_pkey;
+alter table if exists public.bio_catalog
+  add constraint bio_catalog_pkey primary key (user_id, primary_alias);
+
+alter table if exists public.protocol_definitions drop constraint if exists protocol_definitions_pkey;
+alter table if exists public.protocol_definitions
+  add constraint protocol_definitions_pkey primary key (user_id, protocol_key);
+
+alter table if exists public.protocol_checks drop constraint if exists protocol_checks_protocol_key_week_start_day_index_key;
+alter table if exists public.protocol_checks
+  add constraint protocol_checks_user_key_week_day_unique unique (user_id, protocol_key, week_start, day_index);
+
+alter table if exists public.parameter_entries enable row level security;
+alter table if exists public.bio_entries enable row level security;
+alter table if exists public.bio_catalog enable row level security;
+alter table if exists public.protocol_logs enable row level security;
+alter table if exists public.protocol_definitions enable row level security;
+alter table if exists public.protocol_checks enable row level security;
+alter table if exists public.lighting_phases enable row level security;
+
+drop policy if exists parameter_entries_owner on public.parameter_entries;
+create policy parameter_entries_owner on public.parameter_entries
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists bio_entries_owner on public.bio_entries;
+create policy bio_entries_owner on public.bio_entries
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists bio_catalog_owner on public.bio_catalog;
+create policy bio_catalog_owner on public.bio_catalog
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists protocol_logs_owner on public.protocol_logs;
+create policy protocol_logs_owner on public.protocol_logs
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists protocol_definitions_owner on public.protocol_definitions;
+create policy protocol_definitions_owner on public.protocol_definitions
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists protocol_checks_owner on public.protocol_checks;
+create policy protocol_checks_owner on public.protocol_checks
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists lighting_phases_owner on public.lighting_phases;
+create policy lighting_phases_owner on public.lighting_phases
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);

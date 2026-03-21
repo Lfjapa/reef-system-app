@@ -24,14 +24,123 @@
   padding: 24px 16px 40px;
 }
 
-.header h1 {
-  margin: 0 0 8px;
-  font-size: 2rem;
+.header {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 6px;
 }
 
-.header p {
-  margin: 0 0 20px;
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.brand {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.brand-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+.header-subtitle {
+  margin: 0;
   color: #94a3b8;
+}
+
+.header-message {
+  margin: 0;
+  color: #93c5fd;
+}
+
+.profile {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.profile-btn {
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #cbd5e1;
+  border-radius: 999px;
+  cursor: pointer;
+  padding: 0;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+}
+
+.profile-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  object-fit: cover;
+  display: block;
+}
+
+.profile-avatar-fallback {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: #111c35;
+  border: 1px solid #2b3b5a;
+  font-weight: 800;
+}
+
+.profile-menu {
+  position: absolute;
+  top: 46px;
+  right: 0;
+  z-index: 30;
+  width: min(260px, 80vw);
+  background: #0b1324;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.profile-menu-meta {
+  color: #cbd5e1;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app > .secondary-btn {
+  margin-bottom: 16px;
+}
+
+.auth-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.auth-email {
+  color: #cbd5e1;
+  font-weight: 700;
 }
 
 .sync-badge {
@@ -249,6 +358,7 @@
 .form button:focus-visible,
 .secondary-btn:focus-visible,
 .danger-btn:focus-visible,
+.profile-btn:focus-visible,
 .week-check:focus-visible,
 .form input:focus-visible,
 .form select:focus-visible,

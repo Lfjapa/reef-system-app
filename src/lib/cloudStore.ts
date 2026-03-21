@@ -169,10 +169,11 @@ export const fetchCloudData = async () => {
   }
 }
 
-export const upsertCloudParameter = async (entry: CloudParameterEntry) => {
+export const upsertCloudParameter = async (entry: CloudParameterEntry, userId: string) => {
   const client = ensureClient()
   const { error } = await client.from('parameter_entries').upsert({
     id: entry.id,
+    user_id: userId,
     parameter: entry.parameter,
     value: entry.value,
     measured_at: entry.measuredAt,
@@ -187,10 +188,11 @@ export const deleteCloudParameter = async (id: string) => {
   if (error) throw error
 }
 
-export const upsertCloudBio = async (entry: CloudBioEntry) => {
+export const upsertCloudBio = async (entry: CloudBioEntry, userId: string) => {
   const client = ensureClient()
   const { error } = await client.from('bio_entries').upsert({
     id: entry.id,
+    user_id: userId,
     type: entry.type,
     name: entry.name,
     scientific_name: entry.scientificName,
@@ -207,10 +209,11 @@ export const deleteCloudBio = async (id: string) => {
   if (error) throw error
 }
 
-export const upsertCloudCatalog = async (entry: CloudCatalogEntry) => {
+export const upsertCloudCatalog = async (entry: CloudCatalogEntry, userId: string) => {
   const client = ensureClient()
   const primaryAlias = entry.aliases[0] ?? entry.scientificName
   const { error } = await client.from('bio_catalog').upsert({
+    user_id: userId,
     primary_alias: primaryAlias,
     aliases: entry.aliases,
     type: entry.type,
@@ -221,10 +224,11 @@ export const upsertCloudCatalog = async (entry: CloudCatalogEntry) => {
   if (error) throw error
 }
 
-export const upsertCloudProtocolLog = async (entry: CloudProtocolLog) => {
+export const upsertCloudProtocolLog = async (entry: CloudProtocolLog, userId: string) => {
   const client = ensureClient()
   const { error } = await client.from('protocol_logs').upsert({
     id: entry.id,
+    user_id: userId,
     protocol_key: entry.protocolKey,
     performed_at: entry.performedAt,
     note: entry.note,
@@ -238,9 +242,13 @@ export const deleteCloudProtocolLog = async (id: string) => {
   if (error) throw error
 }
 
-export const upsertCloudProtocolDefinition = async (entry: CloudProtocolDefinition) => {
+export const upsertCloudProtocolDefinition = async (
+  entry: CloudProtocolDefinition,
+  userId: string,
+) => {
   const client = ensureClient()
   const { error } = await client.from('protocol_definitions').upsert({
+    user_id: userId,
     protocol_key: entry.protocolKey,
     label: entry.label,
     days: entry.days,
@@ -250,10 +258,11 @@ export const upsertCloudProtocolDefinition = async (entry: CloudProtocolDefiniti
   if (error) throw error
 }
 
-export const upsertCloudProtocolCheck = async (entry: CloudProtocolCheck) => {
+export const upsertCloudProtocolCheck = async (entry: CloudProtocolCheck, userId: string) => {
   const client = ensureClient()
   const { error } = await client.from('protocol_checks').upsert({
     id: entry.id,
+    user_id: userId,
     protocol_key: entry.protocolKey,
     week_start: entry.weekStart,
     day_index: entry.dayIndex,
@@ -295,10 +304,14 @@ export const deleteCloudProtocolLogsByKey = async (protocolKey: string) => {
   if (error) throw error
 }
 
-export const upsertCloudLightingPhase = async (entry: CloudLightingPhase) => {
+export const upsertCloudLightingPhase = async (
+  entry: CloudLightingPhase,
+  userId: string,
+) => {
   const client = ensureClient()
   const { error } = await client.from('lighting_phases').upsert({
     id: entry.id,
+    user_id: userId,
     name: entry.name,
     time: entry.time,
     uv: entry.uv,

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
+import type { User } from '@supabase/supabase-js'
 import './App.css'
 import { isSupabaseEnabled } from './lib/supabase'
 import {
@@ -20,6 +21,7 @@ import {
   upsertCloudProtocolLog,
   upsertCloudLightingPhase,
 } from './lib/cloudStore'
+import { getSession, onAuthStateChange, signInWithGoogle, signOut } from './lib/auth'
 
 type ParameterKey =
   | 'kh'
@@ -74,6 +76,12 @@ type BioCatalogEntry = {
 type SyncState = 'local' | 'syncing' | 'online' | 'error'
 type FaunaSubmenu = BioType | 'todos'
 type ProtocolKey = string
+
+type UiSettings = {
+  title: string
+  subtitle: string
+  subtitleEnabled: boolean
+}
 
 type ProtocolDefinition = {
   key: ProtocolKey
@@ -626,6 +634,11 @@ const safeJsonParseArray = <T,>(raw: string | null, fallback: T[]) => {
 }
 
 const NOW_AT_BOOT = Date.now()
+const DEFAULT_UI_SETTINGS: UiSettings = {
+  title: 'Reef System 300L',
+  subtitle: 'Controle diário do aquário no PC e no celular',
+  subtitleEnabled: true,
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState<
@@ -677,7 +690,333 @@ function App() {
   const [syncState, setSyncState] = useState<SyncState>(
     isSupabaseEnabled ? 'syncing' : 'local',
   )
+  const [authUser, setAuthUser] = useState<User | null>(null)
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(isSupabaseEnabled)
   const [nowMs, setNowMs] = useState<number>(NOW_AT_BOOT)
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null)
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState<boolean>(false)
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false)
+  const [uiSettings, setUiSettings] = useState<UiSettings>(DEFAULT_UI_SETTINGS)
+  const avatarInputRef = useRef<HTMLInputElement | null>(null)
+
+  const entriesStorageKey = isSupabaseEnabled
+    ? authUser
+      ? `reef-system-entries:${authUser.id}`
+      : null
+    : 'reef-system-entries'
+  const bioEntriesStorageKey = isSupabaseEnabled
+    ? authUser
+      ? `reef-system-bio-entries:${authUser.id}`
+      : null
+    : 'reef-system-bio-entries'
+  const catalogStorageKey = isSupabaseEnabled
+    ? authUser
+      ? `reef-system-bio-catalog:${authUser.id}`
+      : null
+    : 'reef-system-bio-catalog'
+  const protocolLogsStorageKey = isSupabaseEnabled
+    ? authUser
+      ? `reef-system-protocol-logs:${authUser.id}`
+      : null
+    : 'reef-system-protocol-logs'
+  const protocolDefinitionsStorageKey = isSupabaseEnabled
+    ? authUser
+      ? `reef-system-protocol-definitions:${authUser.id}`
+      : null
+    : 'reef-system-protocol-definitions'
+  const protocolChecksStorageKey = isSupabaseEnabled
+    ? authUser
+      ? `reef-system-protocol-checks:${authUser.id}`
+      : null
+    : 'reef-system-protocol-checks'
+  const lightingPhasesStorageKey = isSupabaseEnabled
+    ? authUser
+      ? `reef-system-lighting-phases:${authUser.id}`
+      : null
+    : 'reef-system-lighting-phases'
+  const uiSettingsStorageKey = isSupabaseEnabled
+    ? authUser
+      ? `reef-system-ui-settings:${authUser.id}`
+      : null
+    : 'reef-system-ui-settings'
+  const profileAvatarStorageKey = isSupabaseEnabled
+    ? authUser
+      ? `reef-system-profile-avatar:${authUser.id}`
+      : null
+    : 'reef-system-profile-avatar'
+
+  const handleGoogleLogin = async () => {
+    try {
+      await signInWithGoogle()
+    } catch {
+      setSyncState('error')
+    }
+  }
+
+  const handleLogout = async () => {
+    try {
+      await signOut()
+      setSyncState('local')
+    } catch {
+      setSyncState('error')
+    }
+  }
+
+  const handleOpenSettings = () => {
+    setIsSettingsOpen(true)
+    setIsProfileMenuOpen(false)
+  }
+
+  const handleCloseSettings = () => {
+    setIsSettingsOpen(false)
+  }
+
+  const handleRequestAvatarChange = () => {
+    avatarInputRef.current?.click()
+  }
+
+  const handleAvatarChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const next = typeof reader.result === 'string' ? reader.result : null
+      if (!next) return
+      setProfileAvatarUrl(next)
+      if (profileAvatarStorageKey) localStorage.setItem(profileAvatarStorageKey, next)
+      setIsProfileMenuOpen(false)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleRemoveAvatar = () => {
+    setProfileAvatarUrl(null)
+    if (profileAvatarStorageKey) localStorage.removeItem(profileAvatarStorageKey)
+    setIsProfileMenuOpen(false)
+  }
+
+  const handleSaveUiSettings = (next: UiSettings) => {
+    setUiSettings(next)
+    if (uiSettingsStorageKey) localStorage.setItem(uiSettingsStorageKey, JSON.stringify(next))
+    setIsSettingsOpen(false)
+  }
+
+  useEffect(() => {
+    if (!isSupabaseEnabled) return
+    let alive = true
+    setIsAuthLoading(true)
+    void (async () => {
+      try {
+        const session = await getSession()
+        if (!alive) return
+        setAuthUser(session?.user ?? null)
+      } catch {
+        if (!alive) return
+        setAuthUser(null)
+      } finally {
+        if (!alive) return
+        setIsAuthLoading(false)
+      }
+    })()
+    const unsubscribe = onAuthStateChange((session) => {
+      setAuthUser(session?.user ?? null)
+      setIsAuthLoading(false)
+    })
+    return () => {
+      alive = false
+      unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    setIsProfileMenuOpen(false)
+  }, [authUser?.id])
+
+  useEffect(() => {
+    if (!profileAvatarStorageKey) {
+      setProfileAvatarUrl(null)
+      return
+    }
+    const cached = localStorage.getItem(profileAvatarStorageKey)
+    setProfileAvatarUrl(cached || null)
+  }, [profileAvatarStorageKey])
+
+  useEffect(() => {
+    if (!uiSettingsStorageKey) {
+      setUiSettings(DEFAULT_UI_SETTINGS)
+      return
+    }
+    const raw = localStorage.getItem(uiSettingsStorageKey)
+    if (!raw) {
+      setUiSettings(DEFAULT_UI_SETTINGS)
+      return
+    }
+    try {
+      const parsed = JSON.parse(raw) as Partial<UiSettings>
+      const title = typeof parsed.title === 'string' ? parsed.title : DEFAULT_UI_SETTINGS.title
+      const subtitle =
+        typeof parsed.subtitle === 'string' ? parsed.subtitle : DEFAULT_UI_SETTINGS.subtitle
+      const subtitleEnabled =
+        typeof parsed.subtitleEnabled === 'boolean'
+          ? parsed.subtitleEnabled
+          : DEFAULT_UI_SETTINGS.subtitleEnabled
+      setUiSettings({ title, subtitle, subtitleEnabled })
+    } catch {
+      setUiSettings(DEFAULT_UI_SETTINGS)
+    }
+  }, [uiSettingsStorageKey])
+
+  const SettingsModal = () => {
+    const [draftTitle, setDraftTitle] = useState<string>(uiSettings.title)
+    const [draftSubtitle, setDraftSubtitle] = useState<string>(uiSettings.subtitle)
+    const [draftSubtitleEnabled, setDraftSubtitleEnabled] = useState<boolean>(
+      uiSettings.subtitleEnabled,
+    )
+
+    useEffect(() => {
+      if (!isSettingsOpen) return
+      setDraftTitle(uiSettings.title)
+      setDraftSubtitle(uiSettings.subtitle)
+      setDraftSubtitleEnabled(uiSettings.subtitleEnabled)
+    }, [isSettingsOpen, uiSettings.title, uiSettings.subtitle, uiSettings.subtitleEnabled])
+
+    if (!isSettingsOpen) return null
+
+    return (
+      <div className="modal-backdrop" role="dialog" aria-modal="true">
+        <div className="modal">
+          <div className="modal-head">
+            <h3>Configurações</h3>
+            <button type="button" className="secondary-btn" onClick={handleCloseSettings}>
+              Fechar
+            </button>
+          </div>
+
+          <form
+            className="form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              const next: UiSettings = {
+                title: draftTitle.trim() || DEFAULT_UI_SETTINGS.title,
+                subtitle: draftSubtitle.trim(),
+                subtitleEnabled: draftSubtitleEnabled && draftSubtitle.trim().length > 0,
+              }
+              handleSaveUiSettings(next)
+            }}
+          >
+            <label>
+              Título
+              <input value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} />
+            </label>
+
+            <label>
+              <span>Mostrar subtítulo</span>
+              <input
+                type="checkbox"
+                checked={draftSubtitleEnabled}
+                onChange={(e) => setDraftSubtitleEnabled(e.target.checked)}
+              />
+            </label>
+
+            <label>
+              Subtítulo
+              <input
+                value={draftSubtitle}
+                onChange={(e) => setDraftSubtitle(e.target.value)}
+                disabled={!draftSubtitleEnabled}
+              />
+            </label>
+
+            <div className="modal-actions">
+              <button type="button" className="secondary-btn" onClick={handleCloseSettings}>
+                Cancelar
+              </button>
+              <button type="submit">Salvar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )
+  }
+
+  const Header = ({
+    mode,
+    message,
+  }: {
+    mode: 'loading' | 'login' | 'main'
+    message?: string
+  }) => {
+    const initial = (authUser?.email?.trim()?.[0] ?? 'U').toUpperCase()
+    const showSubtitle = mode === 'main' && uiSettings.subtitleEnabled
+    return (
+      <header className="header">
+        <div className="header-top">
+          <div className="brand">
+            <div className="brand-title-row">
+              <h1>{uiSettings.title}</h1>
+              <button type="button" className="secondary-btn" onClick={handleOpenSettings}>
+                Config
+              </button>
+            </div>
+            {showSubtitle && <p className="header-subtitle">{uiSettings.subtitle}</p>}
+            {message && <p className="header-message">{message}</p>}
+          </div>
+
+          {isSupabaseEnabled && authUser && mode === 'main' && (
+            <div className="profile">
+              <button
+                type="button"
+                className="profile-btn"
+                onClick={() => setIsProfileMenuOpen((current) => !current)}
+                aria-haspopup="menu"
+                aria-expanded={isProfileMenuOpen}
+              >
+                {profileAvatarUrl ? (
+                  <img className="profile-avatar" src={profileAvatarUrl} alt="Foto do perfil" />
+                ) : (
+                  <span className="profile-avatar-fallback">{initial}</span>
+                )}
+              </button>
+
+              {isProfileMenuOpen && (
+                <div className="profile-menu" role="menu">
+                  <div className="profile-menu-meta">{authUser.email ?? ''}</div>
+                  <button type="button" className="secondary-btn" onClick={handleRequestAvatarChange}>
+                    Trocar foto
+                  </button>
+                  <button type="button" className="secondary-btn" onClick={handleOpenSettings}>
+                    Configurações
+                  </button>
+                  <button type="button" className="secondary-btn" onClick={handleRemoveAvatar}>
+                    Remover foto
+                  </button>
+                  <button type="button" className="danger-btn" onClick={handleLogout}>
+                    Sair
+                  </button>
+                </div>
+              )}
+
+              <input
+                ref={avatarInputRef}
+                hidden
+                type="file"
+                accept="image/*"
+                onChange={handleAvatarChange}
+              />
+            </div>
+          )}
+        </div>
+
+        <span className={`sync-badge ${syncState}`}>
+          {syncState === 'online' && 'Sincronização online'}
+          {syncState === 'local' && 'Modo local'}
+          {syncState === 'syncing' && 'Sincronizando...'}
+          {syncState === 'error' && 'Falha na sincronização'}
+        </span>
+      </header>
+    )
+  }
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNowMs(Date.now()), 60000)
@@ -709,13 +1048,38 @@ function App() {
           note: 'Medição de referência',
         },
       ]
-      const localEntriesCache = localStorage.getItem('reef-system-entries')
-      const localBioCache = localStorage.getItem('reef-system-bio-entries')
-      const localCatalogCache = localStorage.getItem('reef-system-bio-catalog')
-      const localProtocolCache = localStorage.getItem('reef-system-protocol-logs')
-      const localProtocolDefCache = localStorage.getItem('reef-system-protocol-definitions')
-      const localProtocolCheckCache = localStorage.getItem('reef-system-protocol-checks')
-      const localLightingCache = localStorage.getItem('reef-system-lighting-phases')
+      if (isSupabaseEnabled && isAuthLoading) {
+        setSyncState('syncing')
+        return
+      }
+
+      if (isSupabaseEnabled && !authUser) {
+        setEntries([])
+        setBioEntries([])
+        setCatalogEntries(seedBioCatalog)
+        setProtocolDefinitions(defaultProtocolDefinitions)
+        setProtocolChecks([])
+        setProtocolLogs([])
+        setLightingPhases(defaultLightingPhases())
+        setSyncState('local')
+        return
+      }
+
+      const localEntriesCache = entriesStorageKey ? localStorage.getItem(entriesStorageKey) : null
+      const localBioCache = bioEntriesStorageKey ? localStorage.getItem(bioEntriesStorageKey) : null
+      const localCatalogCache = catalogStorageKey ? localStorage.getItem(catalogStorageKey) : null
+      const localProtocolCache = protocolLogsStorageKey
+        ? localStorage.getItem(protocolLogsStorageKey)
+        : null
+      const localProtocolDefCache = protocolDefinitionsStorageKey
+        ? localStorage.getItem(protocolDefinitionsStorageKey)
+        : null
+      const localProtocolCheckCache = protocolChecksStorageKey
+        ? localStorage.getItem(protocolChecksStorageKey)
+        : null
+      const localLightingCache = lightingPhasesStorageKey
+        ? localStorage.getItem(lightingPhasesStorageKey)
+        : null
       const localEntries = sanitizeParameterEntries(
         safeJsonParseArray<ParameterEntry>(localEntriesCache, localSeed),
       )
@@ -756,6 +1120,12 @@ function App() {
         return
       }
 
+      const userId = authUser?.id
+      if (!userId) {
+        setSyncState('error')
+        return
+      }
+
       try {
         setSyncState('syncing')
         const cloudData = await fetchCloudData()
@@ -787,7 +1157,7 @@ function App() {
                 value: item.value,
                 measuredAt: item.measuredAt,
                 note: item.note,
-              }),
+              }, userId),
             ),
             ...localBio.map((item) =>
               upsertCloudBio({
@@ -798,7 +1168,7 @@ function App() {
                 position: item.position,
                 note: item.note,
                 createdAt: item.createdAt,
-              }),
+              }, userId),
             ),
             ...localCatalog.map((item) =>
               upsertCloudCatalog({
@@ -807,7 +1177,7 @@ function App() {
                 scientificName: item.scientificName,
                 position: item.position,
                 note: item.note,
-              }),
+              }, userId),
             ),
             ...localProtocolLogs.map((item) =>
               upsertCloudProtocolLog({
@@ -815,7 +1185,7 @@ function App() {
                 protocolKey: item.protocolKey,
                 performedAt: item.performedAt,
                 note: item.note,
-              }),
+              }, userId),
             ),
             ...localProtocolDefinitions.map((item) =>
               upsertCloudProtocolDefinition({
@@ -824,7 +1194,7 @@ function App() {
                 days: item.days,
                 quantity: item.quantity,
                 unit: item.unit,
-              }),
+              }, userId),
             ),
             ...localProtocolChecks.map((item) =>
               upsertCloudProtocolCheck({
@@ -836,7 +1206,7 @@ function App() {
                 quantity: item.quantity,
                 unit: item.unit,
                 note: item.note,
-              }),
+              }, userId),
             ),
             ...localLighting.map((item) =>
               upsertCloudLightingPhase({
@@ -846,7 +1216,7 @@ function App() {
                 uv: item.uv,
                 white: item.white,
                 blue: item.blue,
-              }),
+              }, userId),
             ),
           ])
 
@@ -946,7 +1316,7 @@ function App() {
                   uv: item.uv,
                   white: item.white,
                   blue: item.blue,
-                }),
+                }, userId),
               ),
               ...idsToDelete.map((id) => deleteCloudLightingPhase(id)),
             ])
@@ -969,34 +1339,47 @@ function App() {
     }
 
     void loadData()
-  }, [])
+  }, [
+    authUser,
+    bioEntriesStorageKey,
+    catalogStorageKey,
+    entriesStorageKey,
+    isAuthLoading,
+    lightingPhasesStorageKey,
+    protocolChecksStorageKey,
+    protocolDefinitionsStorageKey,
+    protocolLogsStorageKey,
+  ])
 
   useEffect(() => {
-    localStorage.setItem('reef-system-entries', JSON.stringify(entries))
-  }, [entries])
+    if (!entriesStorageKey) return
+    localStorage.setItem(entriesStorageKey, JSON.stringify(entries))
+  }, [entries, entriesStorageKey])
 
   useEffect(() => {
-    localStorage.setItem('reef-system-bio-entries', JSON.stringify(bioEntries))
-  }, [bioEntries])
+    if (!bioEntriesStorageKey) return
+    localStorage.setItem(bioEntriesStorageKey, JSON.stringify(bioEntries))
+  }, [bioEntries, bioEntriesStorageKey])
 
   useEffect(() => {
-    localStorage.setItem('reef-system-protocol-logs', JSON.stringify(protocolLogs))
-  }, [protocolLogs])
+    if (!protocolLogsStorageKey) return
+    localStorage.setItem(protocolLogsStorageKey, JSON.stringify(protocolLogs))
+  }, [protocolLogs, protocolLogsStorageKey])
 
   useEffect(() => {
-    localStorage.setItem(
-      'reef-system-protocol-definitions',
-      JSON.stringify(protocolDefinitions),
-    )
-  }, [protocolDefinitions])
+    if (!protocolDefinitionsStorageKey) return
+    localStorage.setItem(protocolDefinitionsStorageKey, JSON.stringify(protocolDefinitions))
+  }, [protocolDefinitions, protocolDefinitionsStorageKey])
 
   useEffect(() => {
-    localStorage.setItem('reef-system-protocol-checks', JSON.stringify(protocolChecks))
-  }, [protocolChecks])
+    if (!protocolChecksStorageKey) return
+    localStorage.setItem(protocolChecksStorageKey, JSON.stringify(protocolChecks))
+  }, [protocolChecks, protocolChecksStorageKey])
 
   useEffect(() => {
-    localStorage.setItem('reef-system-lighting-phases', JSON.stringify(lightingPhases))
-  }, [lightingPhases])
+    if (!lightingPhasesStorageKey) return
+    localStorage.setItem(lightingPhasesStorageKey, JSON.stringify(lightingPhases))
+  }, [lightingPhases, lightingPhasesStorageKey])
 
   useEffect(() => {
     const extras = catalogEntries.filter(
@@ -1007,8 +1390,9 @@ function App() {
           ),
         ),
     )
-    localStorage.setItem('reef-system-bio-catalog', JSON.stringify(extras))
-  }, [catalogEntries])
+    if (!catalogStorageKey) return
+    localStorage.setItem(catalogStorageKey, JSON.stringify(extras))
+  }, [catalogEntries, catalogStorageKey])
 
   const latestByParameter = useMemo(() => {
     const map = new Map<ParameterKey, ParameterEntry>()
@@ -1107,15 +1491,18 @@ function App() {
       note,
     }
     setEntries((current) => [...current, newEntry])
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && authUser) {
       try {
-        await upsertCloudParameter({
+        await upsertCloudParameter(
+          {
           id: newEntry.id,
           parameter: newEntry.parameter,
           value: newEntry.value,
           measuredAt: newEntry.measuredAt,
           note: newEntry.note,
-        })
+          },
+          authUser.id,
+        )
         setSyncState('online')
       } catch {
         setSyncState('error')
@@ -1127,7 +1514,7 @@ function App() {
 
   const handleDeleteParameterEntry = async (entryId: string) => {
     setEntries((current) => current.filter((entry) => entry.id !== entryId))
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && authUser) {
       try {
         await deleteCloudParameter(entryId)
         setSyncState('online')
@@ -1156,9 +1543,10 @@ function App() {
       if (!bioEditingId) return [...current, newBioEntry]
       return current.map((item) => (item.id === bioEditingId ? newBioEntry : item))
     })
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && authUser) {
       try {
-        await upsertCloudBio({
+        await upsertCloudBio(
+          {
           id: newBioEntry.id,
           type: newBioEntry.type,
           name: newBioEntry.name,
@@ -1166,7 +1554,9 @@ function App() {
           position: newBioEntry.position,
           note: newBioEntry.note,
           createdAt: newBioEntry.createdAt,
-        })
+          },
+          authUser.id,
+        )
         setSyncState('online')
       } catch {
         setSyncState('error')
@@ -1188,7 +1578,7 @@ function App() {
       setBioPosition('')
       setBioNote('')
     }
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && authUser) {
       try {
         await deleteCloudBio(entryId)
         setSyncState('online')
@@ -1287,9 +1677,9 @@ function App() {
     setIsSearchingBio(false)
     if (!externalMatch) return
     setCatalogEntries((current) => mergeCatalog(current, [externalMatch]))
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && authUser) {
       try {
-        await upsertCloudCatalog(externalMatch)
+        await upsertCloudCatalog(externalMatch, authUser.id)
         setSyncState('online')
       } catch {
         setSyncState('error')
@@ -1394,7 +1784,7 @@ function App() {
     if (existing) {
       setProtocolChecks((current) => current.filter((log) => log.id !== existing.id))
       setProtocolLogs((current) => current.filter((log) => log.id !== existing.id))
-      if (isSupabaseEnabled) {
+      if (isSupabaseEnabled && authUser) {
         try {
           await deleteCloudProtocolCheck(existing.id)
           await deleteCloudProtocolLog(existing.id)
@@ -1428,9 +1818,10 @@ function App() {
       ...current,
     ])
     setProtocolNote('')
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && authUser) {
       try {
-        await upsertCloudProtocolCheck({
+        await upsertCloudProtocolCheck(
+          {
           id: newCheck.id,
           protocolKey: newCheck.protocolKey,
           weekStart: newCheck.weekStart,
@@ -1439,13 +1830,18 @@ function App() {
           quantity: newCheck.quantity,
           unit: newCheck.unit,
           note: newCheck.note,
-        })
-        await upsertCloudProtocolLog({
+          },
+          authUser.id,
+        )
+        await upsertCloudProtocolLog(
+          {
           id: newCheck.id,
           protocolKey: newCheck.protocolKey,
           performedAt: newCheck.checkedAt,
           note: newCheck.note,
-        })
+          },
+          authUser.id,
+        )
         setSyncState('online')
       } catch {
         setSyncState('error')
@@ -1456,7 +1852,7 @@ function App() {
   const handleDeleteProtocolHistoryEntry = async (entryId: string) => {
     setProtocolChecks((current) => current.filter((item) => item.id !== entryId))
     setProtocolLogs((current) => current.filter((item) => item.id !== entryId))
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && authUser) {
       try {
         await deleteCloudProtocolCheck(entryId)
         await deleteCloudProtocolLog(entryId)
@@ -1491,17 +1887,20 @@ function App() {
     setProtocolDefinitions(next)
     setProtocolEditingKey(null)
     setIsProtocolModalOpen(false)
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && authUser) {
       const saved = next.find((d) => d.key === key)
       if (!saved) return
       try {
-        await upsertCloudProtocolDefinition({
+        await upsertCloudProtocolDefinition(
+          {
           protocolKey: saved.key,
           label: saved.label,
           days: saved.days,
           quantity: saved.quantity,
           unit: saved.unit,
-        })
+          },
+          authUser.id,
+        )
         setSyncState('online')
       } catch {
         setSyncState('error')
@@ -1513,7 +1912,7 @@ function App() {
     setProtocolDefinitions((current) => current.filter((item) => item.key !== key))
     setProtocolChecks((current) => current.filter((item) => item.protocolKey !== key))
     setProtocolLogs((current) => current.filter((item) => item.protocolKey !== key))
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && authUser) {
       try {
         await deleteCloudProtocolChecksByKey(key)
         await deleteCloudProtocolLogsByKey(key)
@@ -1580,11 +1979,11 @@ function App() {
 
     setLightingPhases(next)
     setIsLightingModalOpen(false)
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && authUser) {
       const saved = next.find((item) => item.id === lightingEditingId)
       if (!saved) return
       try {
-        await upsertCloudLightingPhase(saved)
+        await upsertCloudLightingPhase(saved, authUser.id)
         setSyncState('online')
       } catch {
         setSyncState('error')
@@ -1607,15 +2006,18 @@ function App() {
     setProtocolAddQuantity('')
     setProtocolAddUnit('ml')
     setIsProtocolModalOpen(false)
-    if (isSupabaseEnabled) {
+    if (isSupabaseEnabled && authUser) {
       try {
-        await upsertCloudProtocolDefinition({
-          protocolKey: newDefinition.key,
-          label: newDefinition.label,
-          days: newDefinition.days,
-          quantity: newDefinition.quantity,
-          unit: newDefinition.unit,
-        })
+        await upsertCloudProtocolDefinition(
+          {
+            protocolKey: newDefinition.key,
+            label: newDefinition.label,
+            days: newDefinition.days,
+            quantity: newDefinition.quantity,
+            unit: newDefinition.unit,
+          },
+          authUser.id,
+        )
         setSyncState('online')
       } catch {
         setSyncState('error')
@@ -1623,18 +2025,31 @@ function App() {
     }
   }
 
+  if (isSupabaseEnabled && isAuthLoading) {
+    return (
+      <main className="app">
+        <Header mode="loading" message="Carregando login..." />
+        <SettingsModal />
+      </main>
+    )
+  }
+
+  if (isSupabaseEnabled && !authUser) {
+    return (
+      <main className="app">
+        <Header mode="login" message="Entre com Google para ver apenas seus registros" />
+        <button type="button" className="secondary-btn" onClick={handleGoogleLogin}>
+          Entrar com Google
+        </button>
+        <SettingsModal />
+      </main>
+    )
+  }
+
   return (
     <main className="app">
-      <header className="header">
-        <h1>Reef System 300L</h1>
-        <p>Controle diário do aquário no PC e no celular</p>
-        <span className={`sync-badge ${syncState}`}>
-          {syncState === 'online' && 'Sincronização online'}
-          {syncState === 'local' && 'Modo local'}
-          {syncState === 'syncing' && 'Sincronizando...'}
-          {syncState === 'error' && 'Falha na sincronização'}
-        </span>
-      </header>
+      <Header mode="main" />
+      <SettingsModal />
 
       <nav className="tabs">
         <button
