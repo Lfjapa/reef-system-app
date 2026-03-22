@@ -2,8 +2,8 @@ export const parameterDefinitionsData = [
   { key: 'kh', label: 'KH', unit: 'dKH', min: 7, max: 9 },
   { key: 'calcio', label: 'Cálcio', unit: 'ppm', min: 420, max: 470 },
   { key: 'magnesio', label: 'Magnésio', unit: 'ppm', min: 1250, max: 1400 },
-  { key: 'salinidade', label: 'Salinidade', unit: 'sg', min: 1.024, max: 1.026 },
-  { key: 'temperatura', label: 'Temperatura', unit: '°C', min: 24, max: 26 },
+  { key: 'salinidade', label: 'Salinidade', unit: 'sg', min: 1.024, max: 1.027 },
+  { key: 'temperatura', label: 'Temperatura', unit: '°C', min: 25, max: 26.5 },
   { key: 'ph', label: 'pH', unit: '', min: 7.9, max: 8.4 },
   { key: 'amonia', label: 'Amônia', unit: 'ppm', min: 0, max: 0.1 },
   { key: 'nitrito', label: 'Nitrito', unit: 'ppm', min: 0, max: 0.1 },
@@ -316,4 +316,3 @@ export const defaultLightingPhasesData = [
   white: number
   blue: number
 }>
-

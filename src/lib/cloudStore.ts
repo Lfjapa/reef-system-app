@@ -246,6 +246,11 @@ export const fetchCloudData = async () => {
 }
 
 export const fetchSafeZones = async () => {
+  const overrides: Record<string, { min: number; max: number }> = {
+    kh: { min: 7, max: 9 },
+    salinidade: { min: 1.024, max: 1.027 },
+    temperatura: { min: 25, max: 26.5 },
+  }
   const client = ensureClient()
   const { data, error } = await client
     .from('v_sistema_seguro')
@@ -255,7 +260,7 @@ export const fetchSafeZones = async () => {
     throw error
   }
   const rows = (data ?? []) as Record<string, unknown>[]
-  return rows
+  const mapped = rows
     .map((row) => ({
       parameter: asString(row.parameter),
       zoneMin: asNumber(row.zona_minima_geral),
@@ -264,6 +269,17 @@ export const fetchSafeZones = async () => {
       label: asString(row.parametro),
     }))
     .filter((row) => Boolean(row.parameter))
+  const byKey = new Map(mapped.map((row) => [row.parameter, row]))
+  for (const [parameter, override] of Object.entries(overrides)) {
+    byKey.set(parameter, {
+      parameter,
+      zoneMin: override.min,
+      zoneMax: override.max,
+      unit: byKey.get(parameter)?.unit ?? '',
+      label: byKey.get(parameter)?.label ?? parameter,
+    })
+  }
+  return Array.from(byKey.values())
 }
 
 export const fetchConsumptionRates = async () => {
