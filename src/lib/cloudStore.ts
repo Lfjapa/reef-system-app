@@ -63,16 +63,29 @@ export type CloudLightingPhase = {
 
 export type CloudSafeZone = {
   parameter: string
-  zoneMin: number
-  zoneMax: number
+  baseMin: number | null
+  baseMax: number | null
+  zoneMin: number | null
+  zoneMax: number | null
   unit: string
   label: string
+  isCustomEnabled: boolean
+  customMin: number | null
+  customMax: number | null
 }
 
 export type CloudConsumptionRate = {
   parameter: string
   dailyRate: number
   measuredAt: string
+}
+
+export type CloudUserParameterSetting = {
+  parameter: string
+  isCustomEnabled: boolean
+  customMin: number | null
+  customMax: number | null
+  updatedAt: string
 }
 
 export type CloudBioRequirement = {
@@ -229,6 +242,15 @@ export const fetchCloudData = async () => {
     fetchAllPages('protocol_checks', { order: { column: 'checked_at', ascending: false } }),
     fetchAllPages('lighting_phases', { order: { column: 'time', ascending: true } }),
   ])
+  const userParameterSettingRows = await fetchAllPages('user_parameter_settings', {
+    order: { column: 'updated_at', ascending: false },
+  }).catch((error: unknown) => {
+    const code = (error as { code?: string } | null)?.code ?? ''
+    const message = (error as { message?: string } | null)?.message ?? ''
+    if (code === 'PGRST205' || message.includes("Could not find the table 'public.user_parameter_settings'"))
+      return []
+    throw error
+  })
 
   const parameters: CloudParameterEntry[] = (parameterRows ?? []).map((row) => ({
     id: asString(row.id),
@@ -293,6 +315,16 @@ export const fetchCloudData = async () => {
     blue: asNumber(row.blue),
   }))
 
+  const userParameterSettings: CloudUserParameterSetting[] = (userParameterSettingRows ?? []).map(
+    (row) => ({
+      parameter: asString(row.parameter),
+      isCustomEnabled: Boolean(row.is_custom_enabled),
+      customMin: asOptionalNumber(row.custom_min),
+      customMax: asOptionalNumber(row.custom_max),
+      updatedAt: asString(row.updated_at),
+    }),
+  )
+
   return {
     parameters,
     bio,
@@ -301,44 +333,62 @@ export const fetchCloudData = async () => {
     protocolDefinitions,
     protocolChecks,
     lightingPhases,
+    userParameterSettings,
   }
 }
 
 export const fetchSafeZones = async () => {
-  const overrides: Record<string, { min: number; max: number }> = {
-    kh: { min: 7, max: 9 },
-    salinidade: { min: 1.024, max: 1.027 },
-    temperatura: { min: 25, max: 26.5 },
-  }
   const client = ensureClient()
-  const { data, error } = await client
+  const primary = await client
     .from('v_sistema_seguro')
-    .select('parameter, parametro, unit, zona_minima_geral, zona_maxima_geral')
-  if (error) {
-    if ((error as { code?: string } | null)?.code === 'PGRST205') return []
-    throw error
+    .select(
+      'parameter, parametro, unit, zona_minima_geral_base, zona_maxima_geral_base, zona_minima_geral, zona_maxima_geral, is_custom_enabled, custom_min, custom_max',
+    )
+  if (primary.error) {
+    const code = (primary.error as { code?: string } | null)?.code ?? ''
+    const message = (primary.error as { message?: string } | null)?.message ?? ''
+    if (code === 'PGRST205') return []
+    if (code === '42703' || message.includes('zona_minima_geral_base')) {
+      const fallback = await client
+        .from('v_sistema_seguro')
+        .select('parameter, parametro, unit, zona_minima_geral, zona_maxima_geral')
+      if (fallback.error) {
+        if ((fallback.error as { code?: string } | null)?.code === 'PGRST205') return []
+        throw fallback.error
+      }
+      const rows = (fallback.data ?? []) as Record<string, unknown>[]
+      return rows
+        .map((row) => ({
+          parameter: asString(row.parameter),
+          baseMin: null,
+          baseMax: null,
+          zoneMin: asOptionalNumber(row.zona_minima_geral),
+          zoneMax: asOptionalNumber(row.zona_maxima_geral),
+          unit: asString(row.unit),
+          label: asString(row.parametro),
+          isCustomEnabled: false,
+          customMin: null,
+          customMax: null,
+        }))
+        .filter((row) => Boolean(row.parameter))
+    }
+    throw primary.error
   }
-  const rows = (data ?? []) as Record<string, unknown>[]
-  const mapped = rows
+  const rows = (primary.data ?? []) as Record<string, unknown>[]
+  return rows
     .map((row) => ({
       parameter: asString(row.parameter),
-      zoneMin: asNumber(row.zona_minima_geral),
-      zoneMax: asNumber(row.zona_maxima_geral),
+      baseMin: asOptionalNumber(row.zona_minima_geral_base),
+      baseMax: asOptionalNumber(row.zona_maxima_geral_base),
+      zoneMin: asOptionalNumber(row.zona_minima_geral),
+      zoneMax: asOptionalNumber(row.zona_maxima_geral),
       unit: asString(row.unit),
       label: asString(row.parametro),
+      isCustomEnabled: Boolean(row.is_custom_enabled),
+      customMin: asOptionalNumber(row.custom_min),
+      customMax: asOptionalNumber(row.custom_max),
     }))
     .filter((row) => Boolean(row.parameter))
-  const byKey = new Map(mapped.map((row) => [row.parameter, row]))
-  for (const [parameter, override] of Object.entries(overrides)) {
-    byKey.set(parameter, {
-      parameter,
-      zoneMin: override.min,
-      zoneMax: override.max,
-      unit: byKey.get(parameter)?.unit ?? '',
-      label: byKey.get(parameter)?.label ?? parameter,
-    })
-  }
-  return Array.from(byKey.values())
 }
 
 export const fetchConsumptionRates = async () => {
@@ -755,5 +805,23 @@ export const upsertCloudLightingPhase = async (
 export const deleteCloudLightingPhase = async (id: string) => {
   const client = ensureClient()
   const { error } = await client.from('lighting_phases').delete().eq('id', id)
+  if (error) throw error
+}
+
+export const upsertCloudUserParameterSettings = async (
+  entries: CloudUserParameterSetting[],
+  userId: string,
+) => {
+  const client = ensureClient()
+  const { error } = await client.from('user_parameter_settings').upsert(
+    entries.map((entry) => ({
+      user_id: userId,
+      parameter: entry.parameter,
+      is_custom_enabled: entry.isCustomEnabled,
+      custom_min: entry.customMin,
+      custom_max: entry.customMax,
+      updated_at: entry.updatedAt,
+    })),
+  )
   if (error) throw error
 }

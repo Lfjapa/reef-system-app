@@ -71,3 +71,13 @@ create table if not exists lighting_phases (
   white int not null default 0,
   blue int not null default 0
 );
+
+create table if not exists user_parameter_settings (
+  user_id uuid not null references auth.users(id) on delete cascade default auth.uid(),
+  parameter text not null,
+  is_custom_enabled boolean not null default false,
+  custom_min double precision,
+  custom_max double precision,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, parameter)
+);

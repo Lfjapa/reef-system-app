@@ -83,6 +83,7 @@ alter table if exists public.protocol_logs enable row level security;
 alter table if exists public.protocol_definitions enable row level security;
 alter table if exists public.protocol_checks enable row level security;
 alter table if exists public.lighting_phases enable row level security;
+alter table if exists public.user_parameter_settings enable row level security;
 
 drop policy if exists parameter_entries_owner on public.parameter_entries;
 create policy parameter_entries_owner on public.parameter_entries
@@ -128,6 +129,13 @@ create policy protocol_checks_owner on public.protocol_checks
 
 drop policy if exists lighting_phases_owner on public.lighting_phases;
 create policy lighting_phases_owner on public.lighting_phases
+  for all
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists user_parameter_settings_owner on public.user_parameter_settings;
+create policy user_parameter_settings_owner on public.user_parameter_settings
   for all
   to authenticated
   using (auth.uid() = user_id)

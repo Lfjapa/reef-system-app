@@ -11,6 +11,7 @@ import ProtocolsTab from './components/Protocols/ProtocolsTab'
 import LightingTab from './components/Lighting/LightingTab'
 import InventoryTab from './components/Inventory/InventoryTab'
 import AnimalDetailsModal from './components/Inventory/AnimalDetailsModal'
+import TankSettingsTab from './components/Settings/TankSettingsTab'
 import {
   defaultLightingPhasesData,
   defaultProtocolDefinitionsData,
@@ -50,6 +51,7 @@ import {
   upsertCloudProtocolLogs,
   upsertCloudLightingPhase,
   upsertCloudLightingPhases,
+  upsertCloudUserParameterSettings,
 } from './lib/cloudStore'
 import { getSession, onAuthStateChange, signInWithGoogle, signOut } from './lib/auth'
 
@@ -69,6 +71,14 @@ type ParameterDefinition = {
   unit: string
   min?: number
   max?: number
+}
+
+type TankParameterSetting = {
+  parameter: ParameterKey
+  isCustomEnabled: boolean
+  customMin: number | null
+  customMax: number | null
+  updatedAt: string
 }
 
 type BioType = 'peixe' | 'coral' | 'invertebrado'
@@ -395,6 +405,7 @@ const pickLatestEntry = (items: ParameterEntry[]) => {
 const computeParameterInsight = (
   allEntries: ParameterEntry[],
   definition: ParameterDefinition,
+  safeZones: Map<ParameterKey, { min: number; max: number }>,
 ): ParameterInsight => {
   const items = allEntries
     .filter((entry) => entry.parameter === definition.key)
@@ -403,8 +414,9 @@ const computeParameterInsight = (
 
   const latest = items.length > 0 ? items[items.length - 1] : null
   const previous = items.length > 1 ? items[items.length - 2] : null
-  const min = definition.min
-  const max = definition.max
+  const safe = safeZones.get(definition.key) ?? null
+  const min = safe ? safe.min : definition.min
+  const max = safe ? safe.max : definition.max
 
   let delta: number | null = null
   let daysBetween: number | null = null
@@ -607,7 +619,7 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
 
 function App() {
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'parametros' | 'protocolos' | 'iluminacao' | 'inventario'
+    'dashboard' | 'parametros' | 'protocolos' | 'iluminacao' | 'inventario' | 'configuracoes'
   >('dashboard')
   const [parameter, setParameter] = useState<ParameterKey>('kh')
   const [value, setValue] = useState<string>('')
@@ -671,6 +683,13 @@ function App() {
   const [safeZones, setSafeZones] = useState<Map<ParameterKey, { min: number; max: number }>>(
     () => new Map(),
   )
+  const [safeZonesBase, setSafeZonesBase] = useState<
+    Map<ParameterKey, { min: number; max: number }>
+  >(() => new Map())
+  const [tankSettings, setTankSettings] = useState<Map<ParameterKey, TankParameterSetting>>(
+    () => new Map(),
+  )
+  const [isSavingTankSettings, setIsSavingTankSettings] = useState<boolean>(false)
   const [cloudConsumptionRates, setCloudConsumptionRates] = useState<Map<ParameterKey, number>>(
     () => new Map(),
   )
@@ -801,6 +820,11 @@ function App() {
       ? `reef-system-profile-avatar:${authUser.id}`
       : null
     : 'reef-system-profile-avatar'
+  const tankSettingsStorageKey = isSupabaseEnabled
+    ? authUser
+      ? `reef-system-tank-settings:${authUser.id}`
+      : null
+    : 'reef-system-tank-settings'
 
   const safeLocalStorageSetItem = (key: string, value: string) => {
     try {
@@ -912,6 +936,67 @@ function App() {
     setUiSettings(next)
     if (uiSettingsStorageKey) safeLocalStorageSetItem(uiSettingsStorageKey, JSON.stringify(next))
     setIsSettingsOpen(false)
+  }
+
+  const handleSaveTankSettings = async () => {
+    if (isSavingTankSettings) return
+    if (isSupabaseEnabled && !authUser) {
+      setSyncState('error')
+      setSyncErrorDetail('Faça login para salvar configurações do tanque')
+      return
+    }
+
+    setIsSavingTankSettings(true)
+    try {
+      if (!isSupabaseEnabled) return
+      const userId = authUser?.id
+      if (!userId) return
+
+      const updatedAt = new Date().toISOString()
+      await upsertCloudUserParameterSettings(
+        Array.from(tankSettings.values()).map((item) => ({
+          parameter: item.parameter,
+          isCustomEnabled: item.isCustomEnabled,
+          customMin: item.customMin,
+          customMax: item.customMax,
+          updatedAt,
+        })),
+        userId,
+      )
+
+      const refreshedSafeZoneRows = await fetchSafeZones()
+      const refreshedSafeZoneMap = new Map<ParameterKey, { min: number; max: number }>()
+      const refreshedSafeZoneBaseMap = new Map<ParameterKey, { min: number; max: number }>()
+      for (const row of refreshedSafeZoneRows) {
+        if (!row.parameter) continue
+        if (
+          row.baseMin !== null &&
+          row.baseMax !== null &&
+          Number.isFinite(row.baseMin) &&
+          Number.isFinite(row.baseMax)
+        ) {
+          refreshedSafeZoneBaseMap.set(row.parameter as ParameterKey, { min: row.baseMin, max: row.baseMax })
+        }
+        if (
+          row.zoneMin !== null &&
+          row.zoneMax !== null &&
+          Number.isFinite(row.zoneMin) &&
+          Number.isFinite(row.zoneMax)
+        ) {
+          refreshedSafeZoneMap.set(row.parameter as ParameterKey, { min: row.zoneMin, max: row.zoneMax })
+        }
+      }
+      setSafeZonesBase(refreshedSafeZoneBaseMap)
+      setSafeZones(refreshedSafeZoneMap)
+      setSyncState('online')
+      setSyncErrorDetail(null)
+    } catch (error) {
+      logError('tank-settings-save', error)
+      setSyncState('error')
+      setSyncErrorDetail(formatSyncError(error))
+    } finally {
+      setIsSavingTankSettings(false)
+    }
   }
 
   useEffect(() => {
@@ -1093,6 +1178,8 @@ function App() {
         setProtocolLogs([])
         setLightingPhases(defaultLightingPhases())
         setSafeZones(new Map())
+        setSafeZonesBase(new Map())
+        setTankSettings(new Map())
         setCloudConsumptionRates(new Map())
         setSyncState('local')
         return
@@ -1112,6 +1199,9 @@ function App() {
         : null
       const localLightingCache = lightingPhasesStorageKey
         ? localStorage.getItem(lightingPhasesStorageKey)
+        : null
+      const localTankSettingsCache = tankSettingsStorageKey
+        ? localStorage.getItem(tankSettingsStorageKey)
         : null
       const localEntries = sanitizeParameterEntries(
         safeJsonParseArray<ParameterEntry>(localEntriesCache, localSeed),
@@ -1140,8 +1230,35 @@ function App() {
               blue: parseNumberWithFallback(String(item.blue ?? 0), 0),
             }))
           : defaultLighting
+      const localTankSettingsRaw = safeJsonParseArray<TankParameterSetting>(localTankSettingsCache, [])
+      const localTankSettingsMap = new Map<ParameterKey, TankParameterSetting>(
+        localTankSettingsRaw
+          .filter((item) => Boolean(item?.parameter))
+          .map((item) => [
+            item.parameter,
+            {
+              parameter: item.parameter,
+              isCustomEnabled: Boolean(item.isCustomEnabled),
+              customMin: item.customMin ?? null,
+              customMax: item.customMax ?? null,
+              updatedAt: item.updatedAt || new Date(0).toISOString(),
+            },
+          ]),
+      )
 
       if (!isSupabaseEnabled) {
+        const baseSafe = new Map<ParameterKey, { min: number; max: number }>()
+        for (const definition of parameterDefinitions) {
+          if (definition.min === undefined || definition.max === undefined) continue
+          baseSafe.set(definition.key, { min: definition.min, max: definition.max })
+        }
+        const finalSafe = new Map(baseSafe)
+        for (const item of localTankSettingsMap.values()) {
+          if (!item.isCustomEnabled) continue
+          if (item.customMin === null || item.customMax === null) continue
+          if (!Number.isFinite(item.customMin) || !Number.isFinite(item.customMax)) continue
+          finalSafe.set(item.parameter, { min: item.customMin, max: item.customMax })
+        }
         setEntries(localEntries)
         setBioEntries(localBio)
         setCatalogEntries(mergeCatalog(seedBioCatalog, localCatalog))
@@ -1149,7 +1266,9 @@ function App() {
         setProtocolChecks(localProtocolChecks)
         setProtocolLogs(localProtocolLogs)
         setLightingPhases(localLighting)
-        setSafeZones(new Map())
+        setSafeZones(finalSafe)
+        setSafeZonesBase(baseSafe)
+        setTankSettings(localTankSettingsMap)
         setCloudConsumptionRates(new Map())
         setSyncState('local')
         setSyncErrorDetail(null)
@@ -1171,12 +1290,28 @@ function App() {
         const safeZoneRows = await fetchSafeZones()
         const consumptionRows = await fetchConsumptionRates()
         const safeZoneMap = new Map<ParameterKey, { min: number; max: number }>()
+        const safeZoneBaseMap = new Map<ParameterKey, { min: number; max: number }>()
         for (const row of safeZoneRows) {
           if (!row.parameter) continue
-          if (!Number.isFinite(row.zoneMin) || !Number.isFinite(row.zoneMax)) continue
-          safeZoneMap.set(row.parameter as ParameterKey, { min: row.zoneMin, max: row.zoneMax })
+          if (
+            row.baseMin !== null &&
+            row.baseMax !== null &&
+            Number.isFinite(row.baseMin) &&
+            Number.isFinite(row.baseMax)
+          ) {
+            safeZoneBaseMap.set(row.parameter as ParameterKey, { min: row.baseMin, max: row.baseMax })
+          }
+          if (
+            row.zoneMin !== null &&
+            row.zoneMax !== null &&
+            Number.isFinite(row.zoneMin) &&
+            Number.isFinite(row.zoneMax)
+          ) {
+            safeZoneMap.set(row.parameter as ParameterKey, { min: row.zoneMin, max: row.zoneMax })
+          }
         }
         setSafeZones(safeZoneMap)
+        setSafeZonesBase(safeZoneBaseMap)
         const consumptionMap = new Map<ParameterKey, number>()
         for (const row of consumptionRows) {
           if (!row.parameter) continue
@@ -1184,6 +1319,22 @@ function App() {
           consumptionMap.set(row.parameter as ParameterKey, row.dailyRate)
         }
         setCloudConsumptionRates(consumptionMap)
+        setTankSettings(
+          new Map(
+            cloudData.userParameterSettings
+              .filter((item) => Boolean(item.parameter))
+              .map((item) => [
+                item.parameter as ParameterKey,
+                {
+                  parameter: item.parameter as ParameterKey,
+                  isCustomEnabled: item.isCustomEnabled,
+                  customMin: item.customMin,
+                  customMax: item.customMax,
+                  updatedAt: item.updatedAt,
+                },
+              ]),
+          ),
+        )
         const cloudIsEmpty =
           cloudData.parameters.length === 0 &&
           cloudData.bio.length === 0 &&
@@ -1191,7 +1342,8 @@ function App() {
           cloudData.protocolLogs.length === 0 &&
           cloudData.protocolDefinitions.length === 0 &&
           cloudData.protocolChecks.length === 0 &&
-          cloudData.lightingPhases.length === 0
+          cloudData.lightingPhases.length === 0 &&
+          cloudData.userParameterSettings.length === 0
 
         const hasLocalCache = Boolean(
           localEntriesCache ||
@@ -1200,7 +1352,8 @@ function App() {
             localProtocolCache ||
             localProtocolDefCache ||
             localProtocolCheckCache ||
-            localLightingCache,
+            localLightingCache ||
+            localTankSettingsCache,
         )
 
         if (cloudIsEmpty && hasLocalCache) {
@@ -1269,6 +1422,18 @@ function App() {
             userId,
           )
 
+          syncStage = 'Enviando configurações do tanque'
+          await upsertCloudUserParameterSettings(
+            Array.from(localTankSettingsMap.values()).map((item) => ({
+              parameter: item.parameter,
+              isCustomEnabled: item.isCustomEnabled,
+              customMin: item.customMin,
+              customMax: item.customMax,
+              updatedAt: new Date().toISOString(),
+            })),
+            userId,
+          )
+
           syncStage = 'Enviando histórico de protocolos'
           await upsertCloudProtocolLogs(
             localProtocolLogs.map((item) => ({
@@ -1300,6 +1465,34 @@ function App() {
           setProtocolChecks(localProtocolChecks)
           setProtocolLogs(localProtocolLogs)
           setLightingPhases(localLighting)
+          setTankSettings(localTankSettingsMap)
+          const refreshedSafeZoneRows = await fetchSafeZones()
+          const refreshedSafeZoneMap = new Map<ParameterKey, { min: number; max: number }>()
+          const refreshedSafeZoneBaseMap = new Map<ParameterKey, { min: number; max: number }>()
+          for (const row of refreshedSafeZoneRows) {
+            if (!row.parameter) continue
+            if (
+              row.baseMin !== null &&
+              row.baseMax !== null &&
+              Number.isFinite(row.baseMin) &&
+              Number.isFinite(row.baseMax)
+            ) {
+              refreshedSafeZoneBaseMap.set(row.parameter as ParameterKey, {
+                min: row.baseMin,
+                max: row.baseMax,
+              })
+            }
+            if (
+              row.zoneMin !== null &&
+              row.zoneMax !== null &&
+              Number.isFinite(row.zoneMin) &&
+              Number.isFinite(row.zoneMax)
+            ) {
+              refreshedSafeZoneMap.set(row.parameter as ParameterKey, { min: row.zoneMin, max: row.zoneMax })
+            }
+          }
+          setSafeZones(refreshedSafeZoneMap)
+          setSafeZonesBase(refreshedSafeZoneBaseMap)
           setSyncState('online')
           return
         }
@@ -1401,6 +1594,18 @@ function App() {
         setSyncErrorDetail(null)
       } catch (error) {
         logError('sync-loadData', error)
+        const baseSafe = new Map<ParameterKey, { min: number; max: number }>()
+        for (const definition of parameterDefinitions) {
+          if (definition.min === undefined || definition.max === undefined) continue
+          baseSafe.set(definition.key, { min: definition.min, max: definition.max })
+        }
+        const finalSafe = new Map(baseSafe)
+        for (const item of localTankSettingsMap.values()) {
+          if (!item.isCustomEnabled) continue
+          if (item.customMin === null || item.customMax === null) continue
+          if (!Number.isFinite(item.customMin) || !Number.isFinite(item.customMax)) continue
+          finalSafe.set(item.parameter, { min: item.customMin, max: item.customMax })
+        }
         setEntries(localEntries)
         setBioEntries(localBio)
         setCatalogEntries(mergeCatalog(seedBioCatalog, localCatalog))
@@ -1408,7 +1613,9 @@ function App() {
         setProtocolChecks(localProtocolChecks)
         setProtocolLogs(localProtocolLogs)
         setLightingPhases(localLighting)
-        setSafeZones(new Map())
+        setSafeZones(finalSafe)
+        setSafeZonesBase(baseSafe)
+        setTankSettings(localTankSettingsMap)
         setCloudConsumptionRates(new Map())
         setSyncState('error')
         const detail = formatSyncError(error)
@@ -1427,8 +1634,26 @@ function App() {
     protocolChecksStorageKey,
     protocolDefinitionsStorageKey,
     protocolLogsStorageKey,
+    tankSettingsStorageKey,
     syncReloadNonce,
   ])
+
+  useEffect(() => {
+    const base = new Map<ParameterKey, { min: number; max: number }>(safeZonesBase)
+    for (const definition of parameterDefinitions) {
+      if (definition.min === undefined || definition.max === undefined) continue
+      if (base.has(definition.key)) continue
+      base.set(definition.key, { min: definition.min, max: definition.max })
+    }
+    const next = new Map(base)
+    for (const setting of tankSettings.values()) {
+      if (!setting.isCustomEnabled) continue
+      if (setting.customMin === null || setting.customMax === null) continue
+      if (!Number.isFinite(setting.customMin) || !Number.isFinite(setting.customMax)) continue
+      next.set(setting.parameter, { min: setting.customMin, max: setting.customMax })
+    }
+    setSafeZones(next)
+  }, [safeZonesBase, tankSettings])
 
   useEffect(() => {
     if (!entriesStorageKey) return
@@ -1459,6 +1684,11 @@ function App() {
     if (!lightingPhasesStorageKey) return
     safeLocalStorageSetItem(lightingPhasesStorageKey, JSON.stringify(lightingPhases))
   }, [lightingPhases, lightingPhasesStorageKey])
+
+  useEffect(() => {
+    if (!tankSettingsStorageKey) return
+    safeLocalStorageSetItem(tankSettingsStorageKey, JSON.stringify(Array.from(tankSettings.values())))
+  }, [tankSettings, tankSettingsStorageKey])
 
   useEffect(() => {
     const extras = catalogEntries.filter(
@@ -1642,10 +1872,10 @@ function App() {
   const parameterInsights = useMemo(() => {
     const map = new Map<ParameterKey, ParameterInsight>()
     for (const definition of parameterDefinitions) {
-      map.set(definition.key, computeParameterInsight(entries, definition))
+      map.set(definition.key, computeParameterInsight(entries, definition, safeZones))
     }
     return map
-  }, [entries])
+  }, [entries, safeZones])
 
   const dashboardInsightCards = useMemo(() => {
     const candidates = parameterDefinitions
@@ -2731,6 +2961,12 @@ function App() {
         >
           Inventário
         </button>
+        <button
+          className={activeTab === 'configuracoes' ? 'active' : ''}
+          onClick={() => setActiveTab('configuracoes')}
+        >
+          Configurações
+        </button>
       </nav>
 
       {activeTab === 'dashboard' && (
@@ -2869,6 +3105,38 @@ function App() {
           onOpenBioDetails={openAnimalDetails}
           onStartEditBioEntry={handleStartEditBioEntry}
           onDeleteBioEntry={handleDeleteBioEntry}
+        />
+      )}
+
+      {activeTab === 'configuracoes' && (
+        <TankSettingsTab
+          parameterDefinitions={parameterDefinitions}
+          safeZones={safeZones}
+          safeZonesBase={safeZonesBase}
+          settings={
+            new Map(
+              Array.from(tankSettings.entries()).map(([key, item]) => [
+                key,
+                { isCustomEnabled: item.isCustomEnabled, customMin: item.customMin, customMax: item.customMax },
+              ]),
+            )
+          }
+          onChangeSetting={(parameterKey, next) => {
+            setTankSettings((current) => {
+              const updatedAt = new Date().toISOString()
+              const nextMap = new Map(current)
+              nextMap.set(parameterKey, {
+                parameter: parameterKey,
+                isCustomEnabled: next.isCustomEnabled,
+                customMin: next.customMin,
+                customMax: next.customMax,
+                updatedAt,
+              })
+              return nextMap
+            })
+          }}
+          onSave={() => void handleSaveTankSettings()}
+          isSaving={isSavingTankSettings}
         />
       )}
     </main>

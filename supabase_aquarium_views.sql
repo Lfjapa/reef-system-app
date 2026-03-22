@@ -43,7 +43,14 @@ values
 on conflict (key) do nothing;
 
 create or replace view public.v_sistema_seguro as
-with candidates as (
+with users as (
+  select distinct user_id from public.parameter_entries
+  union
+  select distinct user_id from public.bio_entries
+  union
+  select distinct user_id from public.user_parameter_settings
+),
+candidates as (
   select
     b.user_id,
     b.scientific_name as bio_scientific_name,
@@ -77,17 +84,60 @@ unpivoted as (
     ('kh', dkh_min, dkh_max)
   ) as v(parameter_key, min_ideal, max_ideal)
   where v.min_ideal is not null and v.max_ideal is not null
+),
+bio_zone as (
+  select
+    u.user_id,
+    u.parameter,
+    max(u.min_ideal) as bio_min,
+    min(u.max_ideal) as bio_max
+  from unpivoted u
+  group by u.user_id, u.parameter
+),
+base as (
+  select
+    u.user_id,
+    pd.key as parameter,
+    pd.label as parametro,
+    pd.unit,
+    coalesce(bz.bio_min, pd.min_ideal) as zona_minima_geral_base,
+    coalesce(bz.bio_max, pd.max_ideal) as zona_maxima_geral_base
+  from users u
+  cross join public.parameter_dim pd
+  left join bio_zone bz
+    on bz.user_id = u.user_id
+    and bz.parameter = pd.key
+),
+final as (
+  select
+    b.user_id,
+    b.parameter,
+    b.parametro,
+    b.unit,
+    b.zona_minima_geral_base,
+    b.zona_maxima_geral_base,
+    s.is_custom_enabled,
+    s.custom_min,
+    s.custom_max,
+    case
+      when s.is_custom_enabled and s.custom_min is not null and s.custom_max is not null
+        then s.custom_min
+      else b.zona_minima_geral_base
+    end as zona_minima_geral,
+    case
+      when s.is_custom_enabled and s.custom_min is not null and s.custom_max is not null
+        then s.custom_max
+      else b.zona_maxima_geral_base
+    end as zona_maxima_geral
+  from base b
+  left join public.user_parameter_settings s
+    on s.user_id = b.user_id
+    and s.parameter = b.parameter
 )
-select
-  u.user_id,
-  u.parameter,
-  pd.label as parametro,
-  pd.unit,
-  max(u.min_ideal) as zona_minima_geral,
-  min(u.max_ideal) as zona_maxima_geral
-from unpivoted u
-left join public.parameter_dim pd on pd.key = u.parameter
-group by u.user_id, u.parameter, pd.label, pd.unit;
+select *
+from final
+where zona_minima_geral is not null
+  and zona_maxima_geral is not null;
 
 create or replace view public.v_taxa_consumo as
 with ordered as (
