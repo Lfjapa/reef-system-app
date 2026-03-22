@@ -1019,10 +1019,8 @@ function App() {
       const message = (error as { message?: string } | null)?.message ?? ''
       if (code === 'PGRST205' || message.includes("Could not find the table 'public.user_parameter_settings'")) {
         setSavedTankSettings(new Map(tankSettings))
-        setSyncState('error')
-        setSyncErrorDetail(
-          'Configurações salvas localmente. Para sincronizar na nuvem, aplique o SQL da tabela user_parameter_settings no Supabase.',
-        )
+        setSyncState('online')
+        setSyncErrorDetail(null)
         return
       }
       setSyncState('error')
