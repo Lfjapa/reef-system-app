@@ -121,6 +121,65 @@ const asStringArray = (value: unknown) => {
   return value.filter((item): item is string => typeof item === 'string')
 }
 
+const normalizeKey = (value: string | null) =>
+  (value ?? '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+
+const translateReefCompatible = (value: string | null) => {
+  const key = normalizeKey(value)
+  if (!key) return null
+  if (key === 'yes') return 'Sim'
+  if (key === 'no') return 'Não'
+  if (key === 'with caution' || key === 'with-caution') return 'Com cautela'
+  if (key === 'sim' || key === 'nao' || key === 'não' || key === 'com cautela') return value
+  return value
+}
+
+const translateLighting = (value: string | null) => {
+  const key = normalizeKey(value).replace(/\s+/g, ' ')
+  if (!key) return null
+  const dictionary: Record<string, string> = {
+    high: 'Alta',
+    moderate: 'Moderada',
+    low: 'Baixa',
+    medium: 'Média',
+    'moderate to high': 'Moderada a alta',
+    'high to moderate': 'Alta a moderada',
+    'low to moderate': 'Baixa a moderada',
+    'moderate to low': 'Moderada a baixa',
+    'low to high': 'Baixa a alta',
+  }
+  return dictionary[key] ?? value
+}
+
+const translateFlow = (value: string | null) => {
+  const key = normalizeKey(value).replace(/\s+/g, ' ')
+  if (!key) return null
+  const dictionary: Record<string, string> = {
+    high: 'Alto',
+    moderate: 'Moderado',
+    low: 'Baixo',
+    medium: 'Médio',
+    'moderate to high': 'Moderado a alto',
+    'high to moderate': 'Alto a moderado',
+    'low to moderate': 'Baixo a moderado',
+    'moderate to low': 'Moderado a baixo',
+    'low to high': 'Baixo a alto',
+  }
+  return dictionary[key] ?? value
+}
+
+const translateWaterConditions = (value: string | null) => {
+  if (!value) return null
+  return value
+    .replace(/With Caution/gi, 'Com cautela')
+    .replace(/Yes/gi, 'Sim')
+    .replace(/No/gi, 'Não')
+}
+
 const asNumberArray = (value: unknown) => {
   if (!Array.isArray(value)) return []
   return value
@@ -324,10 +383,10 @@ export const fetchBioRequirementByScientificName = async (scientificName: string
   const row = data as Record<string, unknown>
   return {
     scientificName: asString(row.scientific_name),
-    reefCompatible: asString(row.reef_compatible, '') || null,
-    waterConditions: asString(row.water_conditions, '') || null,
-    lighting: asString(row.lighting, '') || null,
-    flow: asString(row.flow, '') || null,
+    reefCompatible: translateReefCompatible(asString(row.reef_compatible, '') || null),
+    waterConditions: translateWaterConditions(asString(row.water_conditions, '') || null),
+    lighting: translateLighting(asString(row.lighting, '') || null),
+    flow: translateFlow(asString(row.flow, '') || null),
     tempMinC: asOptionalNumber(row.temp_min_c),
     tempMaxC: asOptionalNumber(row.temp_max_c),
     sgMin: asOptionalNumber(row.sg_min),
@@ -376,10 +435,10 @@ export const fetchBioDeepDiveByEntryId = async (entryId: string) => {
     requirement: reqScientificName
       ? {
           scientificName: reqScientificName,
-          reefCompatible: asString(row.reef_compatible, '') || null,
-          waterConditions: asString(row.water_conditions, '') || null,
-          lighting: asString(row.lighting, '') || null,
-          flow: asString(row.flow, '') || null,
+          reefCompatible: translateReefCompatible(asString(row.reef_compatible, '') || null),
+          waterConditions: translateWaterConditions(asString(row.water_conditions, '') || null),
+          lighting: translateLighting(asString(row.lighting, '') || null),
+          flow: translateFlow(asString(row.flow, '') || null),
           tempMinC: asOptionalNumber(row.temp_min_c),
           tempMaxC: asOptionalNumber(row.temp_max_c),
           sgMin: asOptionalNumber(row.sg_min),
@@ -410,9 +469,9 @@ export const fetchBioDeepDivePreviews = async () => {
   return rows
     .map((row) => ({
       entryId: asString(row.bio_entry_id),
-      reefCompatible: asString(row.reef_compatible, '') || null,
-      lighting: asString(row.lighting, '') || null,
-      flow: asString(row.flow, '') || null,
+      reefCompatible: translateReefCompatible(asString(row.reef_compatible, '') || null),
+      lighting: translateLighting(asString(row.lighting, '') || null),
+      flow: translateFlow(asString(row.flow, '') || null),
     }))
     .filter((row) => Boolean(row.entryId))
 }
