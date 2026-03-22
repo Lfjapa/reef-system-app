@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:host": "vite --host 127.0.0.1",
+    "dev:lan": "vite --host 0.0.0.0",
+    "enrich:bio": "node tools/enrich-bio-data.mjs",
+    "export:bio-requirements": "node tools/export-bio-requirements.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -28,6 +32,7 @@
     "lightningcss": "^1.32.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.57.0",
-    "vite": "^8.0.1"
+    "vite": "^8.0.1",
+    "xlsx": "^0.18.5"
   }
 }

@@ -1,7 +1,13 @@
 do $$
 declare
-  owner_id uuid := '00000000-0000-0000-0000-000000000000';
+  owner_id uuid;
 begin
+  select id
+    into owner_id
+  from auth.users
+  order by created_at asc
+  limit 1;
+
   alter table if exists public.parameter_entries
     add column if not exists user_id uuid references auth.users(id) on delete cascade;
   alter table if exists public.bio_entries
@@ -17,42 +23,58 @@ begin
   alter table if exists public.lighting_phases
     add column if not exists user_id uuid references auth.users(id) on delete cascade;
 
-  update public.parameter_entries set user_id = owner_id where user_id is null;
-  update public.bio_entries set user_id = owner_id where user_id is null;
-  update public.bio_catalog set user_id = owner_id where user_id is null;
-  update public.protocol_logs set user_id = owner_id where user_id is null;
-  update public.protocol_definitions set user_id = owner_id where user_id is null;
-  update public.protocol_checks set user_id = owner_id where user_id is null;
-  update public.lighting_phases set user_id = owner_id where user_id is null;
+  if owner_id is not null then
+    update public.parameter_entries set user_id = owner_id where user_id is null;
+    update public.bio_entries set user_id = owner_id where user_id is null;
+    update public.bio_catalog set user_id = owner_id where user_id is null;
+    update public.protocol_logs set user_id = owner_id where user_id is null;
+    update public.protocol_definitions set user_id = owner_id where user_id is null;
+    update public.protocol_checks set user_id = owner_id where user_id is null;
+    update public.lighting_phases set user_id = owner_id where user_id is null;
+  end if;
 
-  alter table public.parameter_entries alter column user_id set default auth.uid();
-  alter table public.bio_entries alter column user_id set default auth.uid();
-  alter table public.bio_catalog alter column user_id set default auth.uid();
-  alter table public.protocol_logs alter column user_id set default auth.uid();
-  alter table public.protocol_definitions alter column user_id set default auth.uid();
-  alter table public.protocol_checks alter column user_id set default auth.uid();
-  alter table public.lighting_phases alter column user_id set default auth.uid();
+  alter table if exists public.parameter_entries alter column user_id set default auth.uid();
+  alter table if exists public.bio_entries alter column user_id set default auth.uid();
+  alter table if exists public.bio_catalog alter column user_id set default auth.uid();
+  alter table if exists public.protocol_logs alter column user_id set default auth.uid();
+  alter table if exists public.protocol_definitions alter column user_id set default auth.uid();
+  alter table if exists public.protocol_checks alter column user_id set default auth.uid();
+  alter table if exists public.lighting_phases alter column user_id set default auth.uid();
 
-  alter table public.parameter_entries alter column user_id set not null;
-  alter table public.bio_entries alter column user_id set not null;
-  alter table public.bio_catalog alter column user_id set not null;
-  alter table public.protocol_logs alter column user_id set not null;
-  alter table public.protocol_definitions alter column user_id set not null;
-  alter table public.protocol_checks alter column user_id set not null;
-  alter table public.lighting_phases alter column user_id set not null;
+  if owner_id is not null then
+    alter table if exists public.parameter_entries alter column user_id set not null;
+    alter table if exists public.bio_entries alter column user_id set not null;
+    alter table if exists public.bio_catalog alter column user_id set not null;
+    alter table if exists public.protocol_logs alter column user_id set not null;
+    alter table if exists public.protocol_definitions alter column user_id set not null;
+    alter table if exists public.protocol_checks alter column user_id set not null;
+    alter table if exists public.lighting_phases alter column user_id set not null;
+  end if;
 end $$;
 
-alter table if exists public.bio_catalog drop constraint if exists bio_catalog_pkey;
-alter table if exists public.bio_catalog
-  add constraint bio_catalog_pkey primary key (user_id, primary_alias);
+do $$
+begin
+  if to_regclass('public.bio_catalog') is not null
+     and (select count(*) from public.bio_catalog where user_id is null) = 0 then
+    alter table public.bio_catalog drop constraint if exists bio_catalog_pkey;
+    alter table public.bio_catalog
+      add constraint bio_catalog_pkey primary key (user_id, primary_alias);
+  end if;
 
-alter table if exists public.protocol_definitions drop constraint if exists protocol_definitions_pkey;
-alter table if exists public.protocol_definitions
-  add constraint protocol_definitions_pkey primary key (user_id, protocol_key);
+  if to_regclass('public.protocol_definitions') is not null
+     and (select count(*) from public.protocol_definitions where user_id is null) = 0 then
+    alter table public.protocol_definitions drop constraint if exists protocol_definitions_pkey;
+    alter table public.protocol_definitions
+      add constraint protocol_definitions_pkey primary key (user_id, protocol_key);
+  end if;
 
-alter table if exists public.protocol_checks drop constraint if exists protocol_checks_protocol_key_week_start_day_index_key;
-alter table if exists public.protocol_checks
-  add constraint protocol_checks_user_key_week_day_unique unique (user_id, protocol_key, week_start, day_index);
+  if to_regclass('public.protocol_checks') is not null
+     and (select count(*) from public.protocol_checks where user_id is null) = 0 then
+    alter table public.protocol_checks drop constraint if exists protocol_checks_protocol_key_week_start_day_index_key;
+    alter table public.protocol_checks
+      add constraint protocol_checks_user_key_week_day_unique unique (user_id, protocol_key, week_start, day_index);
+  end if;
+end $$;
 
 alter table if exists public.parameter_entries enable row level security;
 alter table if exists public.bio_entries enable row level security;

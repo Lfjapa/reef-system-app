@@ -1,8 +1,26 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import type { User } from '@supabase/supabase-js'
 import './App.css'
+import Header from './components/shared/Header'
+import ParameterAlertModal from './components/shared/ParameterAlertModal'
+import SettingsModal from './components/shared/SettingsModal'
+import DashboardTab from './components/Dashboard/DashboardTab'
+import ParametersTab from './components/Parameters/ParametersTab'
+import ProtocolsTab from './components/Protocols/ProtocolsTab'
+import LightingTab from './components/Lighting/LightingTab'
+import InventoryTab from './components/Inventory/InventoryTab'
+import AnimalDetailsModal from './components/Inventory/AnimalDetailsModal'
+import {
+  defaultLightingPhasesData,
+  defaultProtocolDefinitionsData,
+  parameterDefinitionsData,
+  seedBioCatalogData,
+} from './data/defaults'
+import { useCloudWriteQueue } from './hooks/useCloudWriteQueue'
 import { isSupabaseEnabled } from './lib/supabase'
+import { logError } from './lib/log'
+import { idbDel, idbGet, idbSet } from './lib/idb'
 import {
   deleteCloudBio,
   deleteCloudLightingPhase,
@@ -13,13 +31,25 @@ import {
   deleteCloudProtocolLog,
   deleteCloudProtocolLogsByKey,
   fetchCloudData,
+  fetchBioDeepDiveByEntryId,
+  fetchBioDeepDivePreviews,
+  fetchBioRequirementByScientificName,
+  fetchConsumptionRates,
+  fetchSafeZones,
   upsertCloudBio,
+  upsertCloudBios,
   upsertCloudCatalog,
+  upsertCloudCatalogEntries,
   upsertCloudParameter,
+  upsertCloudParameters,
   upsertCloudProtocolCheck,
+  upsertCloudProtocolChecks,
   upsertCloudProtocolDefinition,
+  upsertCloudProtocolDefinitions,
   upsertCloudProtocolLog,
+  upsertCloudProtocolLogs,
   upsertCloudLightingPhase,
+  upsertCloudLightingPhases,
 } from './lib/cloudStore'
 import { getSession, onAuthStateChange, signInWithGoogle, signOut } from './lib/auth'
 
@@ -62,7 +92,7 @@ type BioCatalogEntry = {
 }
 
 type SyncState = 'local' | 'syncing' | 'online' | 'error'
-type FaunaSubmenu = BioType | 'todos'
+type FaunaSubmenu = BioType
 type ProtocolKey = string
 
 type UiSettings = {
@@ -106,20 +136,7 @@ type LightingPhase = {
   blue: number
 }
 
-const parameterDefinitions: ParameterDefinition[] = [
-  { key: 'kh', label: 'KH', unit: 'dKH', min: 7, max: 9 },
-  { key: 'calcio', label: 'Cálcio', unit: 'ppm', min: 420, max: 470 },
-  { key: 'magnesio', label: 'Magnésio', unit: 'ppm', min: 1250, max: 1400 },
-  { key: 'salinidade', label: 'Salinidade', unit: 'sg', min: 1.024, max: 1.026 },
-  { key: 'temperatura', label: 'Temperatura', unit: '°C', min: 24, max: 26 },
-  { key: 'ph', label: 'pH', unit: '', min: 7.9, max: 8.4 },
-  { key: 'amonia', label: 'Amônia', unit: 'ppm', min: 0, max: 0.1 },
-  { key: 'nitrito', label: 'Nitrito', unit: 'ppm', min: 0, max: 0.1 },
-  { key: 'nitrato', label: 'Nitrato', unit: 'ppm', min: 2, max: 20 },
-  { key: 'fosfato', label: 'Fosfato', unit: 'ppm', min: 0.01, max: 0.1 },
-  { key: 'silicato', label: 'Silicato', unit: 'ppm', min: 0, max: 0.5 },
-  { key: 'iodo', label: 'Iodo/Estrôncio/Potássio', unit: 'ppm' },
-]
+const parameterDefinitions: ParameterDefinition[] = parameterDefinitionsData
 
 const parameterColors: Record<string, string> = {
   kh: '#38bdf8',
@@ -151,225 +168,9 @@ const getSeriesColor = (key: string) => {
   return `hsl(${hue} 70% 60%)`
 }
 
-const seedBioCatalog: BioCatalogEntry[] = [
-  {
-    aliases: ['camarão bailarino', 'camarao bailarino', 'sexy shrimp'],
-    type: 'invertebrado',
-    scientificName: 'Thor amboinensis',
-    position: 'base e rochas com anêmonas/corais',
-    note: 'Invertebrado limpador; observar muda e comportamento',
-  },
-  {
-    aliases: ['palhaço ocellaris', 'palhaco ocellaris', 'ocellaris'],
-    type: 'peixe',
-    scientificName: 'Amphiprion ocellaris',
-    position: 'médio',
-    note: 'Peixe territorial leve, bom para recife',
-  },
-  {
-    aliases: ['diamond goby', 'goby diamond', 'goby'],
-    type: 'peixe',
-    scientificName: 'Valenciennea puellaris',
-    position: 'fundo',
-    note: 'Revira substrato; precisa de areia estável',
-  },
-  {
-    aliases: ['torch coral', 'euphyllia glabrescens', 'torch'],
-    type: 'coral',
-    scientificName: 'Euphyllia glabrescens',
-    position: 'meio',
-    note: 'Luz média e fluxo moderado',
-  },
-  {
-    aliases: ['mushroom coral', 'discosoma', 'mushroom'],
-    type: 'coral',
-    scientificName: 'Discosoma spp.',
-    position: 'fundo',
-    note: 'Coral resistente; prefere luz baixa a média',
-  },
-  {
-    aliases: ['peixe-palhaço', 'peixe palhaco', 'ocellaris', 'percula'],
-    type: 'peixe',
-    scientificName: 'Amphiprion ocellaris / Amphiprion percula',
-    position: 'meio / fundo',
-    note: 'Pacífico, onívoro, clássico de recife',
-  },
-  {
-    aliases: ['firefish', 'nemateleotris magnifica', 'nemateleotris decora'],
-    type: 'peixe',
-    scientificName: 'Nemateleotris magnifica / Nemateleotris decora',
-    position: 'meio',
-    note: 'Tímido e saltador; usar tampa',
-  },
-  {
-    aliases: ['royal gramma', 'gramma loreto', 'blackcap basslet'],
-    type: 'peixe',
-    scientificName: 'Gramma loreto / Gramma melacara',
-    position: 'fundo / cavernas',
-    note: 'Pacífico, territorial com a toca',
-  },
-  {
-    aliases: ['pseudochromis', 'dottyback', 'pictichromis'],
-    type: 'peixe',
-    scientificName: 'Pictichromis spp.',
-    position: 'meio / fundo',
-    note: 'Semi-agressivo, pode atacar camarões pequenos',
-  },
-  {
-    aliases: ['cardinal banggai', 'banggai', 'pterapogon kauderni'],
-    type: 'peixe',
-    scientificName: 'Pterapogon kauderni',
-    position: 'meio',
-    note: 'Pacífico, ideal em casal',
-  },
-  {
-    aliases: ['grammistes', 'peixe-sabão', 'peixe sabao', 'grammistes sexlineatus'],
-    type: 'peixe',
-    scientificName: 'Grammistes sexlineatus',
-    position: 'fundo / cavernas',
-    note: 'Predador; atenção à toxina em estresse severo',
-  },
-  {
-    aliases: ['blue tang', 'dory', 'paracanthurus hepatus'],
-    type: 'peixe',
-    scientificName: 'Paracanthurus hepatus',
-    position: 'todas as áreas',
-    note: 'Cresce muito; exige aquário grande',
-  },
-  {
-    aliases: ['yellow tang', 'purple tang', 'sailfin tang', 'zebrasoma'],
-    type: 'peixe',
-    scientificName: 'Zebrasoma spp.',
-    position: 'todas as áreas',
-    note: 'Herbívoro; semi-agressivo com outros tangs',
-  },
-  {
-    aliases: ['kole tang', 'tomini tang', 'ctenochaetus'],
-    type: 'peixe',
-    scientificName: 'Ctenochaetus spp.',
-    position: 'meio / fundo',
-    note: 'Excelente controle de algas finas',
-  },
-  {
-    aliases: ['watchman goby', 'yellow watchman', 'cryptocentrus'],
-    type: 'peixe',
-    scientificName: 'Cryptocentrus spp.',
-    position: 'fundo',
-    note: 'Pode fazer simbiose com camarão pistola',
-  },
-  {
-    aliases: ['blenny', 'lawn mower', 'tailspot', 'ecsenius', 'salarias'],
-    type: 'peixe',
-    scientificName: 'Ecsenius spp. / Salarias fasciatus',
-    position: 'fundo / rochas',
-    note: 'Personalidade forte; ótimo para controle de algas',
-  },
-  {
-    aliases: ['wrasse', 'six line', 'melanurus', 'fairy wrasse', 'flasher wrasse'],
-    type: 'peixe',
-    scientificName: 'Pseudocheilinus / Halichoeres / Cirrhilabrus',
-    position: 'meio / topo',
-    note: 'Pode pular; recomendado aquário tampado',
-  },
-  {
-    aliases: ['foxface', 'siganus vulpinus'],
-    type: 'peixe',
-    scientificName: 'Siganus vulpinus',
-    position: 'meio',
-    note: 'Herbívoro, espinhos venenosos',
-  },
-  {
-    aliases: ['mandarim', 'synchiropus splendidus', 'mandarin'],
-    type: 'peixe',
-    scientificName: 'Synchiropus splendidus',
-    position: 'fundo',
-    note: 'Difícil, depende de microfauna abundante',
-  },
-  {
-    aliases: ['anthias', 'lyretail', 'pseudanthias squamipinnis'],
-    type: 'peixe',
-    scientificName: 'Pseudanthias squamipinnis',
-    position: 'topo / meio',
-    note: 'Peixe de cardume com alimentação frequente',
-  },
-  {
-    aliases: ['camarão cleaner', 'camarao cleaner', 'lysmata amboinensis'],
-    type: 'invertebrado',
-    scientificName: 'Lysmata amboinensis',
-    position: 'rochas',
-    note: 'Limpador de peixes; pacífico',
-  },
-  {
-    aliases: ['blood red shrimp', 'lysmata debelius', 'camarão blood'],
-    type: 'invertebrado',
-    scientificName: 'Lysmata debelius',
-    position: 'rochas / cavernas',
-    note: 'Mais tímido, principalmente noturno',
-  },
-  {
-    aliases: ['peppermint shrimp', 'camarão peppermint', 'lysmata wurdemanni'],
-    type: 'invertebrado',
-    scientificName: 'Lysmata wurdemanni',
-    position: 'rochas',
-    note: 'Ajuda no controle de aiptasia',
-  },
-  {
-    aliases: ['camarão boxer', 'coral banded shrimp', 'stenopus hispidus'],
-    type: 'invertebrado',
-    scientificName: 'Stenopus hispidus',
-    position: 'cavernas',
-    note: 'Territorial; pode atacar camarões menores',
-  },
-  {
-    aliases: ['camarão pistola', 'alpheus'],
-    type: 'invertebrado',
-    scientificName: 'Alpheus spp.',
-    position: 'substrato / tocas',
-    note: 'Simbiose clássica com gobies watchman',
-  },
-  {
-    aliases: ['caranguejo esmeralda', 'mithraculus sculptus', 'emerald crab'],
-    type: 'invertebrado',
-    scientificName: 'Mithraculus sculptus',
-    position: 'rochas',
-    note: 'Controle de valônia; monitorar comportamento',
-  },
-  {
-    aliases: ['ermitão azul', 'ermitão vermelho', 'calcinus', 'paguristes'],
-    type: 'invertebrado',
-    scientificName: 'Calcinus elegans / Paguristes cadenati',
-    position: 'substrato / rochas',
-    note: 'Equipe de limpeza, pode disputar conchas',
-  },
-  {
-    aliases: ['turbo snail', 'trochus', 'astrea', 'astraea', 'snail turbo'],
-    type: 'invertebrado',
-    scientificName: 'Turbo spp. / Trochus spp. / Astraea spp.',
-    position: 'vidros / rochas',
-    note: 'Excelente equipe de limpeza de algas',
-  },
-]
+const seedBioCatalog: BioCatalogEntry[] = seedBioCatalogData
 
-const defaultProtocolDefinitions: ProtocolDefinition[] = [
-  { key: 'dose_ab_plus', label: 'Dosar AB+', days: [1, 3, 6], quantity: null, unit: 'ml' },
-  {
-    key: 'dose_caledonia',
-    label: 'Dosar Caledonia Mineral Blend',
-    days: [2, 5],
-    quantity: null,
-    unit: 'ml',
-  },
-  {
-    key: 'dose_reef_energy_plus',
-    label: 'Dosar Red Sea Reef Energy Plus',
-    days: [1, 3, 6],
-    quantity: null,
-    unit: 'ml',
-  },
-  { key: 'test_kh', label: 'Testar KH', days: [6], quantity: null, unit: '' },
-  { key: 'add_bacteria', label: 'Adicionar biologia/bactérias', days: [6], quantity: null, unit: '' },
-  { key: 'tpa', label: 'TPA (troca parcial de água)', days: [6], quantity: null, unit: '%' },
-]
+const defaultProtocolDefinitions: ProtocolDefinition[] = defaultProtocolDefinitionsData
 
 const normalize = (value: string) =>
   value
@@ -387,14 +188,23 @@ const findInCatalog = (name: string) => {
 
 const mergeCatalog = (base: BioCatalogEntry[], extras: BioCatalogEntry[]) => {
   const merged = [...base]
-  for (const entry of extras) {
-    const exists = merged.some((current) =>
-      current.aliases.some((alias) =>
-        entry.aliases.some((newAlias) => normalize(newAlias) === normalize(alias)),
-      ),
-    )
-    if (!exists) merged.push(entry)
+  const aliasSet = new Set<string>()
+
+  for (const entry of merged) {
+    for (const alias of entry.aliases) {
+      aliasSet.add(normalize(alias))
+    }
   }
+
+  for (const entry of extras) {
+    const isDup = entry.aliases.some((alias) => aliasSet.has(normalize(alias)))
+    if (isDup) continue
+    merged.push(entry)
+    for (const alias of entry.aliases) {
+      aliasSet.add(normalize(alias))
+    }
+  }
+
   return merged
 }
 
@@ -447,64 +257,7 @@ const timeToMinutes = (time: string) => {
 
 const normalizeTime = (value: string) => (value.length >= 5 ? value.slice(0, 5) : value)
 
-const DEFAULT_LIGHTING_PHASES: LightingPhase[] = [
-  {
-    id: '7f0e2d9b-3b1e-4d8c-9f5b-0d2d2a1a0001',
-    name: 'Amanhecer',
-    time: '08:30',
-    uv: 60,
-    white: 0,
-    blue: 120,
-  },
-  {
-    id: '7f0e2d9b-3b1e-4d8c-9f5b-0d2d2a1a0002',
-    name: 'Subida',
-    time: '10:30',
-    uv: 150,
-    white: 40,
-    blue: 160,
-  },
-  {
-    id: '7f0e2d9b-3b1e-4d8c-9f5b-0d2d2a1a0003',
-    name: 'Pico (Suave)',
-    time: '12:30',
-    uv: 200,
-    white: 130,
-    blue: 120,
-  },
-  {
-    id: '7f0e2d9b-3b1e-4d8c-9f5b-0d2d2a1a0004',
-    name: 'Manutenção',
-    time: '15:30',
-    uv: 180,
-    white: 80,
-    blue: 150,
-  },
-  {
-    id: '7f0e2d9b-3b1e-4d8c-9f5b-0d2d2a1a0005',
-    name: 'Sunset (Neon)',
-    time: '17:30',
-    uv: 220,
-    white: 10,
-    blue: 200,
-  },
-  {
-    id: '7f0e2d9b-3b1e-4d8c-9f5b-0d2d2a1a0006',
-    name: 'Moonlight',
-    time: '19:00',
-    uv: 100,
-    white: 0,
-    blue: 80,
-  },
-  {
-    id: '7f0e2d9b-3b1e-4d8c-9f5b-0d2d2a1a0007',
-    name: 'Desligar',
-    time: '19:30',
-    uv: 0,
-    white: 0,
-    blue: 0,
-  },
-]
+const DEFAULT_LIGHTING_PHASES: LightingPhase[] = defaultLightingPhasesData
 
 const DEFAULT_LIGHTING_BY_TIME = new Map(DEFAULT_LIGHTING_PHASES.map((phase) => [phase.time, phase]))
 
@@ -797,6 +550,21 @@ const safeJsonParseArray = <T,>(raw: string | null, fallback: T[]) => {
   }
 }
 
+const formatSyncError = (error: unknown) => {
+  if (error instanceof Error) return error.message || 'Erro desconhecido'
+  if (!error || typeof error !== 'object') return 'Erro desconhecido'
+  const candidate = error as Record<string, unknown>
+  const message = typeof candidate.message === 'string' ? candidate.message : ''
+  const code = typeof candidate.code === 'string' ? candidate.code : ''
+  const details = typeof candidate.details === 'string' ? candidate.details : ''
+  const hint = typeof candidate.hint === 'string' ? candidate.hint : ''
+  const status = typeof candidate.status === 'number' ? String(candidate.status) : ''
+  const pieces = [message, code && `code=${code}`, status && `status=${status}`, details, hint].filter(
+    (item) => Boolean(item),
+  )
+  return pieces.join(' • ') || 'Erro desconhecido'
+}
+
 const NOW_AT_BOOT = Date.now()
 const DEFAULT_UI_SETTINGS: UiSettings = {
   title: 'Monitoramento do aquario',
@@ -822,9 +590,12 @@ function App() {
   const [bioNote, setBioNote] = useState<string>('')
   const [bioEditingId, setBioEditingId] = useState<string | null>(null)
   const [bioEntries, setBioEntries] = useState<BioEntry[]>([])
-  const [faunaSubmenu, setFaunaSubmenu] = useState<FaunaSubmenu>('todos')
+  const [faunaSubmenu, setFaunaSubmenu] = useState<FaunaSubmenu>('peixe')
   const [faunaSearch, setFaunaSearch] = useState<string>('')
   const [catalogEntries, setCatalogEntries] = useState<BioCatalogEntry[]>(seedBioCatalog)
+  const [bioDeepDivePreviewById, setBioDeepDivePreviewById] = useState<
+    Map<string, { reefCompatible: string | null; lighting: string | null; flow: string | null }>
+  >(() => new Map())
   const [isSearchingBio, setIsSearchingBio] = useState<boolean>(false)
   const [protocolDefinitions, setProtocolDefinitions] = useState<ProtocolDefinition[]>(
     defaultProtocolDefinitions,
@@ -854,13 +625,64 @@ function App() {
   const [syncState, setSyncState] = useState<SyncState>(
     isSupabaseEnabled ? 'syncing' : 'local',
   )
+  const [syncErrorDetail, setSyncErrorDetail] = useState<string | null>(null)
+  const [storageError, setStorageError] = useState<string | null>(null)
   const [authUser, setAuthUser] = useState<User | null>(null)
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(isSupabaseEnabled)
   const [nowMs, setNowMs] = useState<number>(NOW_AT_BOOT)
+  const [syncReloadNonce, setSyncReloadNonce] = useState<number>(0)
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null)
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState<boolean>(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false)
   const [uiSettings, setUiSettings] = useState<UiSettings>(DEFAULT_UI_SETTINGS)
+  const [safeZones, setSafeZones] = useState<Map<ParameterKey, { min: number; max: number }>>(
+    () => new Map(),
+  )
+  const [cloudConsumptionRates, setCloudConsumptionRates] = useState<Map<ParameterKey, number>>(
+    () => new Map(),
+  )
+  const [bioRequirementState, setBioRequirementState] = useState<
+    'idle' | 'loading' | 'found' | 'not_found' | 'error'
+  >('idle')
+  const [bioRequirementPreview, setBioRequirementPreview] = useState<{
+    scientificName: string
+    reefCompatible: string | null
+    waterConditions: string | null
+    lighting: string | null
+    flow: string | null
+    tempMinC: number | null
+    tempMaxC: number | null
+    sgMin: number | null
+    sgMax: number | null
+    phMin: number | null
+    phMax: number | null
+    dkhMin: number | null
+    dkhMax: number | null
+    source: string | null
+    sourceUrl: string | null
+  } | null>(null)
+  const [animalDetailsEntry, setAnimalDetailsEntry] = useState<BioEntry | null>(null)
+  const [animalDetailsCatalogEntry, setAnimalDetailsCatalogEntry] = useState<BioCatalogEntry | null>(null)
+  const [animalRequirementState, setAnimalRequirementState] = useState<
+    'idle' | 'loading' | 'found' | 'not_found' | 'error'
+  >('idle')
+  const [animalRequirement, setAnimalRequirement] = useState<{
+    scientificName: string
+    reefCompatible: string | null
+    waterConditions: string | null
+    lighting: string | null
+    flow: string | null
+    tempMinC: number | null
+    tempMaxC: number | null
+    sgMin: number | null
+    sgMax: number | null
+    phMin: number | null
+    phMax: number | null
+    dkhMin: number | null
+    dkhMax: number | null
+    source: string | null
+    sourceUrl: string | null
+  } | null>(null)
   const [parameterAlert, setParameterAlert] = useState<{ title: string; message: string } | null>(
     null,
   )
@@ -877,6 +699,29 @@ function App() {
     deltaSinceProtocol: number | null
   } | null>(null)
   const avatarInputRef = useRef<HTMLInputElement | null>(null)
+  const animalRequirementRequestIdRef = useRef(0)
+  const handleCloudWriteError = useCallback((detail: string) => {
+    setSyncState('error')
+    setSyncErrorDetail(detail)
+  }, [])
+
+  const handleCloudWriteOnline = useCallback(() => {
+    setSyncState('online')
+    setSyncErrorDetail(null)
+  }, [])
+
+  const {
+    pendingWrites,
+    enqueue: enqueueCloudWrite,
+    retry: retryCloudWrites,
+    clear: clearCloudWrites,
+  } = useCloudWriteQueue({
+    enabled: isSupabaseEnabled,
+    userId: authUser?.id ?? null,
+    formatError: formatSyncError,
+    onError: handleCloudWriteError,
+    onOnline: handleCloudWriteOnline,
+  })
 
   const entriesStorageKey = isSupabaseEnabled
     ? authUser
@@ -924,21 +769,57 @@ function App() {
       : null
     : 'reef-system-profile-avatar'
 
+  const safeLocalStorageSetItem = (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value)
+      setStorageError(null)
+      return true
+    } catch {
+      setStorageError('Armazenamento local cheio')
+      return false
+    }
+  }
+
+  const safeLocalStorageRemoveItem = (key: string) => {
+    try {
+      localStorage.removeItem(key)
+      setStorageError(null)
+      return true
+    } catch {
+      setStorageError('Armazenamento local cheio')
+      return false
+    }
+  }
+
   const handleGoogleLogin = async () => {
     try {
       await signInWithGoogle()
-    } catch {
+    } catch (error) {
+      logError('auth-login', error)
       setSyncState('error')
+      setSyncErrorDetail(formatSyncError(error))
     }
   }
 
   const handleLogout = async () => {
     try {
       await signOut()
+      clearCloudWrites()
       setSyncState('local')
-    } catch {
+      setSyncErrorDetail(null)
+    } catch (error) {
+      logError('auth-logout', error)
       setSyncState('error')
+      setSyncErrorDetail(formatSyncError(error))
     }
+  }
+
+  const handleRetrySync = () => {
+    if (!isSupabaseEnabled) return
+    setSyncErrorDetail(null)
+    setSyncState('syncing')
+    retryCloudWrites()
+    setSyncReloadNonce((current) => current + 1)
   }
 
   const handleOpenSettings = () => {
@@ -963,7 +844,17 @@ function App() {
       const next = typeof reader.result === 'string' ? reader.result : null
       if (!next) return
       setProfileAvatarUrl(next)
-      if (profileAvatarStorageKey) localStorage.setItem(profileAvatarStorageKey, next)
+      if (profileAvatarStorageKey) {
+        void (async () => {
+          try {
+            await idbSet(profileAvatarStorageKey, next)
+            safeLocalStorageRemoveItem(profileAvatarStorageKey)
+          } catch (error) {
+            logError('avatar-idb-set', error)
+            safeLocalStorageSetItem(profileAvatarStorageKey, next)
+          }
+        })()
+      }
       setIsProfileMenuOpen(false)
     }
     reader.readAsDataURL(file)
@@ -971,13 +862,22 @@ function App() {
 
   const handleRemoveAvatar = () => {
     setProfileAvatarUrl(null)
-    if (profileAvatarStorageKey) localStorage.removeItem(profileAvatarStorageKey)
+    if (profileAvatarStorageKey) {
+      void (async () => {
+        try {
+          await idbDel(profileAvatarStorageKey)
+        } catch (error) {
+          logError('avatar-idb-del', error)
+        }
+        safeLocalStorageRemoveItem(profileAvatarStorageKey)
+      })()
+    }
     setIsProfileMenuOpen(false)
   }
 
   const handleSaveUiSettings = (next: UiSettings) => {
     setUiSettings(next)
-    if (uiSettingsStorageKey) localStorage.setItem(uiSettingsStorageKey, JSON.stringify(next))
+    if (uiSettingsStorageKey) safeLocalStorageSetItem(uiSettingsStorageKey, JSON.stringify(next))
     setIsSettingsOpen(false)
   }
 
@@ -993,10 +893,8 @@ function App() {
       } catch {
         if (!alive) return
         setAuthUser(null)
-      } finally {
-        if (!alive) return
-        setIsAuthLoading(false)
       }
+      if (alive) setIsAuthLoading(false)
     })()
     const unsubscribe = onAuthStateChange((session) => {
       setAuthUser(session?.user ?? null)
@@ -1010,15 +908,45 @@ function App() {
 
   useEffect(() => {
     setIsProfileMenuOpen(false)
-  }, [authUser?.id])
+    clearCloudWrites()
+  }, [authUser?.id, clearCloudWrites])
 
   useEffect(() => {
     if (!profileAvatarStorageKey) {
       setProfileAvatarUrl(null)
       return
     }
-    const cached = localStorage.getItem(profileAvatarStorageKey)
-    setProfileAvatarUrl(cached || null)
+    let alive = true
+    void (async () => {
+      try {
+        const stored = await idbGet(profileAvatarStorageKey)
+        if (!alive) return
+        if (stored) {
+          setProfileAvatarUrl(stored)
+          safeLocalStorageRemoveItem(profileAvatarStorageKey)
+          return
+        }
+        const legacy = localStorage.getItem(profileAvatarStorageKey)
+        if (!alive) return
+        setProfileAvatarUrl(legacy || null)
+        if (legacy) {
+          try {
+            await idbSet(profileAvatarStorageKey, legacy)
+            safeLocalStorageRemoveItem(profileAvatarStorageKey)
+          } catch (error) {
+            logError('avatar-idb-migrate', error)
+          }
+        }
+      } catch (error) {
+        logError('avatar-idb-get', error)
+        if (!alive) return
+        const legacy = localStorage.getItem(profileAvatarStorageKey)
+        setProfileAvatarUrl(legacy || null)
+      }
+    })()
+    return () => {
+      alive = false
+    }
   }, [profileAvatarStorageKey])
 
   useEffect(() => {
@@ -1043,10 +971,7 @@ function App() {
           : DEFAULT_UI_SETTINGS.subtitleEnabled
       if (rawTitle === 'Reef System 300L') {
         title = DEFAULT_UI_SETTINGS.title
-        localStorage.setItem(
-          uiSettingsStorageKey,
-          JSON.stringify({ title, subtitle, subtitleEnabled }),
-        )
+        safeLocalStorageSetItem(uiSettingsStorageKey, JSON.stringify({ title, subtitle, subtitleEnabled }))
       }
       setUiSettings({ title, subtitle, subtitleEnabled })
     } catch {
@@ -1054,183 +979,47 @@ function App() {
     }
   }, [uiSettingsStorageKey])
 
-  const SettingsModal = () => {
-    const [draftTitle, setDraftTitle] = useState<string>(uiSettings.title)
-    const [draftSubtitle, setDraftSubtitle] = useState<string>(uiSettings.subtitle)
-    const [draftSubtitleEnabled, setDraftSubtitleEnabled] = useState<boolean>(
-      uiSettings.subtitleEnabled,
-    )
-
-    useEffect(() => {
-      if (!isSettingsOpen) return
-      setDraftTitle(uiSettings.title)
-      setDraftSubtitle(uiSettings.subtitle)
-      setDraftSubtitleEnabled(uiSettings.subtitleEnabled)
-    }, [isSettingsOpen, uiSettings.title, uiSettings.subtitle, uiSettings.subtitleEnabled])
-
-    if (!isSettingsOpen) return null
-
-    return (
-      <div className="modal-backdrop" role="dialog" aria-modal="true">
-        <div className="modal">
-          <div className="modal-head">
-            <h3>Configurações</h3>
-            <button type="button" className="secondary-btn" onClick={handleCloseSettings}>
-              Fechar
-            </button>
-          </div>
-
-          <form
-            className="form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              const next: UiSettings = {
-                title: draftTitle.trim() || DEFAULT_UI_SETTINGS.title,
-                subtitle: draftSubtitle.trim(),
-                subtitleEnabled: draftSubtitleEnabled && draftSubtitle.trim().length > 0,
-              }
-              handleSaveUiSettings(next)
-            }}
-          >
-            <label>
-              Título
-              <input value={draftTitle} onChange={(e) => setDraftTitle(e.target.value)} />
-            </label>
-
-            <label>
-              <span>Mostrar subtítulo</span>
-              <input
-                type="checkbox"
-                checked={draftSubtitleEnabled}
-                onChange={(e) => setDraftSubtitleEnabled(e.target.checked)}
-              />
-            </label>
-
-            <label>
-              Subtítulo
-              <input
-                value={draftSubtitle}
-                onChange={(e) => setDraftSubtitle(e.target.value)}
-                disabled={!draftSubtitleEnabled}
-              />
-            </label>
-
-            <div className="modal-actions">
-              <button type="button" className="secondary-btn" onClick={handleCloseSettings}>
-                Cancelar
-              </button>
-              <button type="submit">Salvar</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    )
-  }
-
-  const ParameterAlertModal = () => {
-    if (!parameterAlert) return null
-    return (
-      <div className="modal-backdrop" role="dialog" aria-modal="true">
-        <div className="modal">
-          <div className="modal-head">
-            <h3>{parameterAlert.title}</h3>
-            <button
-              type="button"
-              className="secondary-btn"
-              onClick={() => setParameterAlert(null)}
-            >
-              Fechar
-            </button>
-          </div>
-          <p className="modal-text">{parameterAlert.message}</p>
-          <div className="modal-actions">
-            <button type="button" onClick={() => setParameterAlert(null)}>
-              Entendi
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  const Header = ({
-    mode,
-    message,
-  }: {
-    mode: 'loading' | 'login' | 'main'
-    message?: string
-  }) => {
-    const initial = (authUser?.email?.trim()?.[0] ?? 'U').toUpperCase()
-    const showSubtitle = mode === 'main' && uiSettings.subtitleEnabled
-    return (
-      <header className="header">
-        <div className="header-top">
-          <div className="brand">
-            <h1>{uiSettings.title}</h1>
-            {showSubtitle && <p className="header-subtitle">{uiSettings.subtitle}</p>}
-            {message && <p className="header-message">{message}</p>}
-          </div>
-
-          {isSupabaseEnabled && authUser && mode === 'main' && (
-            <div className="profile">
-              <button
-                type="button"
-                className="profile-btn"
-                onClick={() => setIsProfileMenuOpen((current) => !current)}
-                aria-haspopup="menu"
-                aria-expanded={isProfileMenuOpen}
-              >
-                {profileAvatarUrl ? (
-                  <img className="profile-avatar" src={profileAvatarUrl} alt="Foto do perfil" />
-                ) : (
-                  <span className="profile-avatar-fallback">{initial}</span>
-                )}
-              </button>
-
-              {isProfileMenuOpen && (
-                <div className="profile-menu" role="menu">
-                  <div className="profile-menu-meta">{authUser.email ?? ''}</div>
-                  <button type="button" className="secondary-btn" onClick={handleRequestAvatarChange}>
-                    Trocar foto
-                  </button>
-                  <button type="button" className="secondary-btn" onClick={handleOpenSettings}>
-                    Configurações
-                  </button>
-                  <button type="button" className="secondary-btn" onClick={handleRemoveAvatar}>
-                    Remover foto
-                  </button>
-                  <button type="button" className="danger-btn" onClick={handleLogout}>
-                    Sair
-                  </button>
-                </div>
-              )}
-
-              <input
-                ref={avatarInputRef}
-                hidden
-                type="file"
-                accept="image/*"
-                onChange={handleAvatarChange}
-              />
-            </div>
-          )}
-        </div>
-
-        {syncState !== 'local' && (
-          <span className={`sync-badge ${syncState}`}>
-            {syncState === 'online' && 'Sincronização online'}
-            {syncState === 'syncing' && 'Sincronizando...'}
-            {syncState === 'error' && 'Falha na sincronização'}
-          </span>
-        )}
-      </header>
-    )
-  }
-
   useEffect(() => {
     const intervalId = window.setInterval(() => setNowMs(Date.now()), 60000)
     return () => window.clearInterval(intervalId)
   }, [])
+
+  useEffect(() => {
+    if (!isSupabaseEnabled || !authUser) {
+      setBioRequirementState('idle')
+      setBioRequirementPreview(null)
+      return
+    }
+    const scientific = bioScientificName.trim()
+    if (!scientific) {
+      setBioRequirementState('idle')
+      setBioRequirementPreview(null)
+      return
+    }
+    let alive = true
+    setBioRequirementState('loading')
+    void (async () => {
+      try {
+        const requirement = await fetchBioRequirementByScientificName(scientific)
+        if (!alive) return
+        if (!requirement) {
+          setBioRequirementState('not_found')
+          setBioRequirementPreview(null)
+          return
+        }
+        setBioRequirementState('found')
+        setBioRequirementPreview(requirement)
+      } catch (error) {
+        logError('bio-requirements', error)
+        if (!alive) return
+        setBioRequirementState('error')
+        setBioRequirementPreview(null)
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [authUser, bioScientificName])
 
   useEffect(() => {
     const loadData = async () => {
@@ -1270,6 +1059,8 @@ function App() {
         setProtocolChecks([])
         setProtocolLogs([])
         setLightingPhases(defaultLightingPhases())
+        setSafeZones(new Map())
+        setCloudConsumptionRates(new Map())
         setSyncState('local')
         return
       }
@@ -1325,19 +1116,41 @@ function App() {
         setProtocolChecks(localProtocolChecks)
         setProtocolLogs(localProtocolLogs)
         setLightingPhases(localLighting)
+        setSafeZones(new Map())
+        setCloudConsumptionRates(new Map())
         setSyncState('local')
+        setSyncErrorDetail(null)
         return
       }
 
       const userId = authUser?.id
       if (!userId) {
         setSyncState('error')
+        setSyncErrorDetail('Faça login para sincronizar')
         return
       }
 
+      let syncStage = 'Preparando sincronização'
       try {
         setSyncState('syncing')
+        syncStage = 'Carregando dados do Supabase'
         const cloudData = await fetchCloudData()
+        const safeZoneRows = await fetchSafeZones()
+        const consumptionRows = await fetchConsumptionRates()
+        const safeZoneMap = new Map<ParameterKey, { min: number; max: number }>()
+        for (const row of safeZoneRows) {
+          if (!row.parameter) continue
+          if (!Number.isFinite(row.zoneMin) || !Number.isFinite(row.zoneMax)) continue
+          safeZoneMap.set(row.parameter as ParameterKey, { min: row.zoneMin, max: row.zoneMax })
+        }
+        setSafeZones(safeZoneMap)
+        const consumptionMap = new Map<ParameterKey, number>()
+        for (const row of consumptionRows) {
+          if (!row.parameter) continue
+          if (consumptionMap.has(row.parameter as ParameterKey)) continue
+          consumptionMap.set(row.parameter as ParameterKey, row.dailyRate)
+        }
+        setCloudConsumptionRates(consumptionMap)
         const cloudIsEmpty =
           cloudData.parameters.length === 0 &&
           cloudData.bio.length === 0 &&
@@ -1358,76 +1171,94 @@ function App() {
         )
 
         if (cloudIsEmpty && hasLocalCache) {
-          await Promise.all([
-            ...localEntries.map((item) =>
-              upsertCloudParameter({
-                id: item.id,
-                parameter: item.parameter,
-                value: item.value,
-                measuredAt: item.measuredAt,
-                note: item.note,
-              }, userId),
-            ),
-            ...localBio.map((item) =>
-              upsertCloudBio({
-                id: item.id,
-                type: item.type,
-                name: item.name,
-                scientificName: item.scientificName,
-                position: item.position,
-                note: item.note,
-                createdAt: item.createdAt,
-              }, userId),
-            ),
-            ...localCatalog.map((item) =>
-              upsertCloudCatalog({
-                aliases: item.aliases,
-                type: item.type,
-                scientificName: item.scientificName,
-                position: item.position,
-                note: item.note,
-              }, userId),
-            ),
-            ...localProtocolLogs.map((item) =>
-              upsertCloudProtocolLog({
-                id: item.id,
-                protocolKey: item.protocolKey,
-                performedAt: item.performedAt,
-                note: item.note,
-              }, userId),
-            ),
-            ...localProtocolDefinitions.map((item) =>
-              upsertCloudProtocolDefinition({
-                protocolKey: item.key,
-                label: item.label,
-                days: item.days,
-                quantity: item.quantity,
-                unit: item.unit,
-              }, userId),
-            ),
-            ...localProtocolChecks.map((item) =>
-              upsertCloudProtocolCheck({
-                id: item.id,
-                protocolKey: item.protocolKey,
-                weekStart: item.weekStart,
-                dayIndex: item.dayIndex,
-                checkedAt: item.checkedAt,
-                quantity: item.quantity,
-                unit: item.unit,
-                note: item.note,
-              }, userId),
-            ),
-            ...localLighting.map((item) =>
-              upsertCloudLightingPhase({
-                id: item.id,
-                name: item.name,
-                time: item.time,
-                uv: item.uv,
-                white: item.white,
-                blue: item.blue,
-              }, userId),
-            ),
-          ])
+          syncStage = 'Enviando medições de parâmetros'
+          await upsertCloudParameters(
+            localEntries.map((item) => ({
+              id: item.id,
+              parameter: item.parameter,
+              value: item.value,
+              measuredAt: item.measuredAt,
+              note: item.note,
+            })),
+            userId,
+          )
+
+          syncStage = 'Enviando inventário biológico'
+          await upsertCloudBios(
+            localBio.map((item) => ({
+              id: item.id,
+              type: item.type,
+              name: item.name,
+              scientificName: item.scientificName,
+              position: item.position,
+              note: item.note,
+              createdAt: item.createdAt,
+            })),
+            userId,
+          )
+
+          syncStage = 'Enviando catálogo de organismos'
+          await upsertCloudCatalogEntries(
+            localCatalog.map((item) => ({
+              aliases: item.aliases,
+              type: item.type,
+              scientificName: item.scientificName,
+              position: item.position,
+              note: item.note,
+            })),
+            userId,
+          )
+
+          syncStage = 'Enviando definições de protocolo'
+          await upsertCloudProtocolDefinitions(
+            localProtocolDefinitions.map((item) => ({
+              protocolKey: item.key,
+              label: item.label,
+              days: item.days,
+              quantity: item.quantity,
+              unit: item.unit,
+            })),
+            userId,
+          )
+
+          syncStage = 'Enviando checks de protocolo'
+          await upsertCloudProtocolChecks(
+            localProtocolChecks.map((item) => ({
+              id: item.id,
+              protocolKey: item.protocolKey,
+              weekStart: item.weekStart,
+              dayIndex: item.dayIndex,
+              checkedAt: item.checkedAt,
+              quantity: item.quantity,
+              unit: item.unit,
+              note: item.note,
+            })),
+            userId,
+          )
+
+          syncStage = 'Enviando histórico de protocolos'
+          await upsertCloudProtocolLogs(
+            localProtocolLogs.map((item) => ({
+              id: item.id,
+              protocolKey: item.protocolKey,
+              performedAt: item.performedAt,
+              note: item.note,
+            })),
+            userId,
+          )
+
+          syncStage = 'Enviando fases de iluminação'
+          await upsertCloudLightingPhases(
+            localLighting.map((item) => ({
+              id: item.id,
+              name: item.name,
+              time: item.time,
+              uv: item.uv,
+              white: item.white,
+              blue: item.blue,
+            })),
+            userId,
+          )
 
           setEntries(localEntries)
           setBioEntries(localBio)
@@ -1516,26 +1347,27 @@ function App() {
           const { normalized, idsToDelete, needsWriteBack } =
             normalizeLightingFromCloud(mappedLighting)
           if (needsWriteBack) {
-            await Promise.all([
-              ...normalized.map((item) =>
-                upsertCloudLightingPhase({
-                  id: item.id,
-                  name: item.name,
-                  time: item.time,
-                  uv: item.uv,
-                  white: item.white,
-                  blue: item.blue,
-                }, userId),
-              ),
-              ...idsToDelete.map((id) => deleteCloudLightingPhase(id)),
-            ])
+            await upsertCloudLightingPhases(
+              normalized.map((item) => ({
+                id: item.id,
+                name: item.name,
+                time: item.time,
+                uv: item.uv,
+                white: item.white,
+                blue: item.blue,
+              })),
+              userId,
+            )
+            await Promise.all(idsToDelete.map((id) => deleteCloudLightingPhase(id)))
           }
           setLightingPhases(normalized)
         } else {
           setLightingPhases(localLighting)
         }
         setSyncState('online')
-      } catch {
+        setSyncErrorDetail(null)
+      } catch (error) {
+        logError('sync-loadData', error)
         setEntries(localEntries)
         setBioEntries(localBio)
         setCatalogEntries(mergeCatalog(seedBioCatalog, localCatalog))
@@ -1543,7 +1375,11 @@ function App() {
         setProtocolChecks(localProtocolChecks)
         setProtocolLogs(localProtocolLogs)
         setLightingPhases(localLighting)
+        setSafeZones(new Map())
+        setCloudConsumptionRates(new Map())
         setSyncState('error')
+        const detail = formatSyncError(error)
+        setSyncErrorDetail(typeof syncStage === 'string' ? `${syncStage}: ${detail}` : detail)
       }
     }
 
@@ -1558,36 +1394,37 @@ function App() {
     protocolChecksStorageKey,
     protocolDefinitionsStorageKey,
     protocolLogsStorageKey,
+    syncReloadNonce,
   ])
 
   useEffect(() => {
     if (!entriesStorageKey) return
-    localStorage.setItem(entriesStorageKey, JSON.stringify(entries))
+    safeLocalStorageSetItem(entriesStorageKey, JSON.stringify(entries))
   }, [entries, entriesStorageKey])
 
   useEffect(() => {
     if (!bioEntriesStorageKey) return
-    localStorage.setItem(bioEntriesStorageKey, JSON.stringify(bioEntries))
+    safeLocalStorageSetItem(bioEntriesStorageKey, JSON.stringify(bioEntries))
   }, [bioEntries, bioEntriesStorageKey])
 
   useEffect(() => {
     if (!protocolLogsStorageKey) return
-    localStorage.setItem(protocolLogsStorageKey, JSON.stringify(protocolLogs))
+    safeLocalStorageSetItem(protocolLogsStorageKey, JSON.stringify(protocolLogs))
   }, [protocolLogs, protocolLogsStorageKey])
 
   useEffect(() => {
     if (!protocolDefinitionsStorageKey) return
-    localStorage.setItem(protocolDefinitionsStorageKey, JSON.stringify(protocolDefinitions))
+    safeLocalStorageSetItem(protocolDefinitionsStorageKey, JSON.stringify(protocolDefinitions))
   }, [protocolDefinitions, protocolDefinitionsStorageKey])
 
   useEffect(() => {
     if (!protocolChecksStorageKey) return
-    localStorage.setItem(protocolChecksStorageKey, JSON.stringify(protocolChecks))
+    safeLocalStorageSetItem(protocolChecksStorageKey, JSON.stringify(protocolChecks))
   }, [protocolChecks, protocolChecksStorageKey])
 
   useEffect(() => {
     if (!lightingPhasesStorageKey) return
-    localStorage.setItem(lightingPhasesStorageKey, JSON.stringify(lightingPhases))
+    safeLocalStorageSetItem(lightingPhasesStorageKey, JSON.stringify(lightingPhases))
   }, [lightingPhases, lightingPhasesStorageKey])
 
   useEffect(() => {
@@ -1600,7 +1437,7 @@ function App() {
         ),
     )
     if (!catalogStorageKey) return
-    localStorage.setItem(catalogStorageKey, JSON.stringify(extras))
+    safeLocalStorageSetItem(catalogStorageKey, JSON.stringify(extras))
   }, [catalogEntries, catalogStorageKey])
 
   const latestByParameter = useMemo(() => {
@@ -1715,6 +1552,23 @@ function App() {
 
         const pointsInLane = points.map((point) => ({ x: point.x, y: point.y - laneTop }))
 
+        const safe = safeZones.get(key as ParameterKey) ?? null
+        const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+        const safeBand =
+          safe && range !== 0
+            ? (() => {
+                const yMinRaw = laneTop + laneHeight - ((safe.min - minValue) / range) * laneHeight
+                const yMaxRaw = laneTop + laneHeight - ((safe.max - minValue) / range) * laneHeight
+                const y0 = clamp(Math.min(yMinRaw, yMaxRaw), laneTop, laneTop + laneHeight)
+                const y1 = clamp(Math.max(yMinRaw, yMaxRaw), laneTop, laneTop + laneHeight)
+                const h = y1 - y0
+                if (h <= 1) return null
+                return { y: y0, height: h }
+              })()
+            : null
+
+        const safeBandInLane = safeBand ? { y: safeBand.y - laneTop, height: safeBand.height } : null
+
         return {
           key,
           label,
@@ -1727,6 +1581,8 @@ function App() {
           points,
           lanePath: buildMonotonePath(pointsInLane),
           lanePoints: pointsInLane,
+          safeBand,
+          safeBandInLane,
         }
       })
       .filter(
@@ -1744,9 +1600,11 @@ function App() {
           points: ChartPoint[]
           lanePath: string
           lanePoints: ChartPoint[]
+          safeBand: { y: number; height: number } | null
+          safeBandInLane: { y: number; height: number } | null
         } => Boolean(value),
       )
-  }, [dashboardEntries])
+  }, [dashboardEntries, safeZones])
 
   const parameterInsights = useMemo(() => {
     const map = new Map<ParameterKey, ParameterInsight>()
@@ -1760,46 +1618,58 @@ function App() {
     const candidates = parameterDefinitions
       .map((definition) => ({ definition, insight: parameterInsights.get(definition.key) ?? null }))
       .filter(
-        (item) =>
-          item.insight?.latest &&
-          item.insight.dailyRate !== null &&
-          Number.isFinite(item.insight.dailyRate),
+        (item) => {
+          const latest = item.insight?.latest
+          if (!latest) return false
+          const cloudRate = cloudConsumptionRates.get(item.definition.key)
+          const rate = cloudRate ?? item.insight?.dailyRate ?? null
+          return rate !== null && Number.isFinite(rate)
+        },
       )
       .sort(
-        (a, b) =>
-          Math.abs((b.insight?.dailyRate ?? 0) as number) -
-          Math.abs((a.insight?.dailyRate ?? 0) as number),
+        (a, b) => {
+          const aRate = cloudConsumptionRates.get(a.definition.key) ?? a.insight?.dailyRate ?? 0
+          const bRate = cloudConsumptionRates.get(b.definition.key) ?? b.insight?.dailyRate ?? 0
+          return Math.abs(bRate) - Math.abs(aRate)
+        },
       )
       .slice(0, 4)
 
     return candidates
       .map(({ definition, insight }) => {
         const latest = insight?.latest
-        if (!latest || insight?.dailyRate === null) return null
-        const rate = insight.dailyRate
+        if (!latest) return null
+        const rate = cloudConsumptionRates.get(definition.key) ?? insight?.dailyRate ?? null
+        if (rate === null || !Number.isFinite(rate)) return null
         const isConsumption = rate < 0 && ['kh', 'calcio', 'magnesio'].includes(definition.key)
         const metricLabel = isConsumption ? 'Consumo estimado' : 'Variação estimada'
         const rateLabel = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(
           isConsumption ? Math.abs(rate) : rate,
         )
         const rateSuffix = definition.unit ? ` ${definition.unit}/dia` : ' /dia'
-        const daysLabel =
-          insight.daysBetween !== null
+        const daysLabel = cloudConsumptionRates.has(definition.key)
+          ? ' (base: Supabase)'
+          : insight?.daysBetween !== null
             ? ` (base: ${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(insight.daysBetween)} dias)`
             : ''
 
         let autonomy = ''
-        if (
-          insight.projectedDaysToCriticalMin !== null &&
-          Number.isFinite(insight.projectedDaysToCriticalMin)
-        ) {
+        const safe = safeZones.get(definition.key) ?? null
+        if (safe) {
+          const min = safe.min
+          const max = safe.max
+          const daysToLeaveSafe =
+            rate > 0 ? (max - latest.value) / rate : rate < 0 ? (latest.value - min) / Math.abs(rate) : null
+          if (daysToLeaveSafe !== null && Number.isFinite(daysToLeaveSafe) && daysToLeaveSafe > 0) {
+            autonomy = ` · Sai da zona segura em ~${new Intl.NumberFormat('pt-BR', {
+              maximumFractionDigits: 0,
+            }).format(daysToLeaveSafe)} dias`
+          }
+        } else if (insight?.projectedDaysToCriticalMin !== null && Number.isFinite(insight.projectedDaysToCriticalMin)) {
           autonomy = ` · Limite em ~${new Intl.NumberFormat('pt-BR', {
             maximumFractionDigits: 0,
           }).format(insight.projectedDaysToCriticalMin)} dias`
-        } else if (
-          insight.projectedDaysToBound !== null &&
-          Number.isFinite(insight.projectedDaysToBound)
-        ) {
+        } else if (insight?.projectedDaysToBound !== null && Number.isFinite(insight.projectedDaysToBound)) {
           autonomy = ` · Sai do ideal em ~${new Intl.NumberFormat('pt-BR', {
             maximumFractionDigits: 0,
           }).format(insight.projectedDaysToBound)} dias`
@@ -1808,10 +1678,50 @@ function App() {
         return `${definition.label}: ${metricLabel} ${rateLabel}${rateSuffix}${daysLabel}${autonomy}`
       })
       .filter((value): value is string => Boolean(value))
-  }, [parameterInsights])
+  }, [cloudConsumptionRates, parameterInsights, safeZones])
+
+  const safeZoneAlertCards = useMemo(() => {
+    const formatNumber = (value: number) =>
+      new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(value)
+
+    const cards: string[] = []
+    for (const definition of parameterDefinitions) {
+      const safe = safeZones.get(definition.key)
+      if (!safe) continue
+      const latest = latestByParameter.find((item) => item.definition.key === definition.key)?.latest
+      if (!latest) continue
+
+      const min = safe.min
+      const max = safe.max
+      const value = latest.value
+      if (value >= min && value <= max) continue
+
+      const rate = cloudConsumptionRates.get(definition.key) ?? null
+      const rangeLabel = `${formatNumber(min)}–${formatNumber(max)}${definition.unit ? ` ${definition.unit}` : ''}`.trim()
+      const valueLabel = `${formatNumber(value)}${definition.unit ? ` ${definition.unit}` : ''}`.trim()
+
+      let projection = ''
+      if (rate !== null && Number.isFinite(rate) && rate !== 0) {
+        if (value < min && rate > 0) {
+          const days = (min - value) / rate
+          if (Number.isFinite(days) && days > 0) {
+            projection = ` · Volta em ~${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(days)} dias`
+          }
+        } else if (value > max && rate < 0) {
+          const days = (value - max) / Math.abs(rate)
+          if (Number.isFinite(days) && days > 0) {
+            projection = ` · Volta em ~${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(days)} dias`
+          }
+        }
+      }
+
+      cards.push(`${definition.label}: ${valueLabel} · Fora da zona segura (${rangeLabel})${projection}`)
+    }
+    return cards
+  }, [cloudConsumptionRates, latestByParameter, safeZones])
 
   const dashboardAlertCards = useMemo(() => {
-    return parameterDefinitions
+    const insightCards = parameterDefinitions
       .map((definition) => {
         const insight = parameterInsights.get(definition.key)
         const latest = insight?.latest ?? null
@@ -1838,7 +1748,9 @@ function App() {
         return `${definition.label}: ${valueLabel} · ${insight.badge}${details ? ` · ${details}` : ''}`
       })
       .filter((value): value is string => Boolean(value))
-  }, [parameterInsights])
+
+    return [...safeZoneAlertCards, ...insightCards]
+  }, [parameterInsights, safeZoneAlertCards])
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
@@ -1929,7 +1841,7 @@ function App() {
 
     setEntries((current) => [...current, newEntry])
     if (isSupabaseEnabled && authUser) {
-      try {
+      enqueueCloudWrite('Medição de parâmetro', async () => {
         await upsertCloudParameter(
           {
             id: newEntry.id,
@@ -1940,10 +1852,7 @@ function App() {
           },
           authUser.id,
         )
-        setSyncState('online')
-      } catch {
-        setSyncState('error')
-      }
+      })
     }
     setValue('')
     setNote('')
@@ -1952,12 +1861,9 @@ function App() {
   const handleDeleteParameterEntry = async (entryId: string) => {
     setEntries((current) => current.filter((entry) => entry.id !== entryId))
     if (isSupabaseEnabled && authUser) {
-      try {
+      enqueueCloudWrite('Excluir medição de parâmetro', async () => {
         await deleteCloudParameter(entryId)
-        setSyncState('online')
-      } catch {
-        setSyncState('error')
-      }
+      })
     }
   }
 
@@ -1981,23 +1887,20 @@ function App() {
       return current.map((item) => (item.id === bioEditingId ? newBioEntry : item))
     })
     if (isSupabaseEnabled && authUser) {
-      try {
+      enqueueCloudWrite('Organismo do inventário', async () => {
         await upsertCloudBio(
           {
-          id: newBioEntry.id,
-          type: newBioEntry.type,
-          name: newBioEntry.name,
-          scientificName: newBioEntry.scientificName,
-          position: newBioEntry.position,
-          note: newBioEntry.note,
-          createdAt: newBioEntry.createdAt,
+            id: newBioEntry.id,
+            type: newBioEntry.type,
+            name: newBioEntry.name,
+            scientificName: newBioEntry.scientificName,
+            position: newBioEntry.position,
+            note: newBioEntry.note,
+            createdAt: newBioEntry.createdAt,
           },
           authUser.id,
         )
-        setSyncState('online')
-      } catch {
-        setSyncState('error')
-      }
+      })
     }
     setBioName('')
     setBioScientificName('')
@@ -2016,12 +1919,9 @@ function App() {
       setBioNote('')
     }
     if (isSupabaseEnabled && authUser) {
-      try {
+      enqueueCloudWrite('Excluir organismo do inventário', async () => {
         await deleteCloudBio(entryId)
-        setSyncState('online')
-      } catch {
-        setSyncState('error')
-      }
+      })
     }
   }
 
@@ -2049,8 +1949,123 @@ function App() {
     )
   }
 
+  const openAnimalDetails = (entry: BioEntry) => {
+    setAnimalDetailsEntry(entry)
+    setAnimalDetailsCatalogEntry(null)
+    setAnimalRequirement(null)
+    const trimmedScientific = entry.scientificName.trim()
+    if (!isSupabaseEnabled) {
+      setAnimalRequirementState(trimmedScientific ? 'not_found' : 'idle')
+      return
+    }
+
+    animalRequirementRequestIdRef.current += 1
+    const requestId = animalRequirementRequestIdRef.current
+    setAnimalRequirementState('loading')
+
+    void fetchBioDeepDiveByEntryId(entry.id)
+      .then((data) => {
+        if (animalRequirementRequestIdRef.current !== requestId) return
+        if (data?.catalog) setAnimalDetailsCatalogEntry(data.catalog)
+        if (data?.requirement) {
+          setAnimalRequirement(data.requirement)
+          setAnimalRequirementState('found')
+          return
+        }
+        if (!trimmedScientific) {
+          setAnimalRequirement(null)
+          setAnimalRequirementState('idle')
+          return
+        }
+        void fetchBioRequirementByScientificName(trimmedScientific)
+          .then((fallback) => {
+            if (animalRequirementRequestIdRef.current !== requestId) return
+            if (!fallback) {
+              setAnimalRequirement(null)
+              setAnimalRequirementState('not_found')
+              return
+            }
+            setAnimalRequirement(fallback)
+            setAnimalRequirementState('found')
+          })
+          .catch((error) => {
+            if (animalRequirementRequestIdRef.current !== requestId) return
+            logError('bio-details-requirements', error)
+            setAnimalRequirement(null)
+            setAnimalRequirementState('error')
+          })
+      })
+      .catch((error) => {
+        if (animalRequirementRequestIdRef.current !== requestId) return
+        logError('bio-details-deep-dive', error)
+        if (!trimmedScientific) {
+          setAnimalRequirement(null)
+          setAnimalRequirementState('idle')
+          return
+        }
+        void fetchBioRequirementByScientificName(trimmedScientific)
+          .then((fallback) => {
+            if (animalRequirementRequestIdRef.current !== requestId) return
+            if (!fallback) {
+              setAnimalRequirement(null)
+              setAnimalRequirementState('not_found')
+              return
+            }
+            setAnimalRequirement(fallback)
+            setAnimalRequirementState('found')
+          })
+          .catch((fallbackError) => {
+            if (animalRequirementRequestIdRef.current !== requestId) return
+            logError('bio-details-requirements', fallbackError)
+            setAnimalRequirement(null)
+            setAnimalRequirementState('error')
+          })
+      })
+  }
+
+  const closeAnimalDetails = () => {
+    setAnimalDetailsEntry(null)
+    setAnimalDetailsCatalogEntry(null)
+    setAnimalRequirement(null)
+    setAnimalRequirementState('idle')
+  }
+
   const bioSearchRequestIdRef = useRef(0)
   const bioSearchAbortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    if (activeTab !== 'inventario' || !isSupabaseEnabled || !authUser) {
+      setBioDeepDivePreviewById(new Map())
+      return
+    }
+
+    let cancelled = false
+    void fetchBioDeepDivePreviews()
+      .then((rows) => {
+        if (cancelled) return
+        const next = new Map<
+          string,
+          { reefCompatible: string | null; lighting: string | null; flow: string | null }
+        >()
+        for (const row of rows) {
+          next.set(row.entryId, {
+            reefCompatible: row.reefCompatible,
+            lighting: row.lighting,
+            flow: row.flow,
+          })
+        }
+        setBioDeepDivePreviewById(next)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        logError('bio-deep-dive-previews', error)
+        setBioDeepDivePreviewById(new Map())
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeTab, authUser, bioEntries, isSupabaseEnabled, syncReloadNonce])
 
   useEffect(() => {
     return () => {
@@ -2064,10 +2079,17 @@ function App() {
   ): Promise<BioCatalogEntry | null> => {
     const trimmed = name.trim()
     if (!trimmed) return null
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), 8000)
+    const handleAbort = () => controller.abort()
+    if (signal) {
+      if (signal.aborted) return null
+      signal.addEventListener('abort', handleAbort, { once: true })
+    }
     try {
       const gbifResponse = await fetch(
         `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(trimmed)}`,
-        { signal },
+        { signal: controller.signal },
       )
       if (gbifResponse.ok) {
         const gbifData = await gbifResponse.json()
@@ -2082,8 +2104,13 @@ function App() {
           return newEntry
         }
       }
-    } catch {
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return null
+      logError('gbif-search', error)
       return null
+    } finally {
+      window.clearTimeout(timeoutId)
+      if (signal) signal.removeEventListener('abort', handleAbort)
     }
     return null
   }
@@ -2115,12 +2142,9 @@ function App() {
     if (!externalMatch) return
     setCatalogEntries((current) => mergeCatalog(current, [externalMatch]))
     if (isSupabaseEnabled && authUser) {
-      try {
+      enqueueCloudWrite('Catálogo de organismos', async () => {
         await upsertCloudCatalog(externalMatch, authUser.id)
-        setSyncState('online')
-      } catch {
-        setSyncState('error')
-      }
+      })
     }
     setBioType(externalMatch.type)
     if (!bioScientificName.trim()) setBioScientificName(externalMatch.scientificName)
@@ -2131,7 +2155,7 @@ function App() {
   const faunaItems = useMemo(() => {
     const normalizedSearch = normalize(faunaSearch)
     return bioEntries
-      .filter((item) => (faunaSubmenu === 'todos' ? true : item.type === faunaSubmenu))
+      .filter((item) => item.type === faunaSubmenu)
       .filter((item) =>
         normalizedSearch
           ? `${normalize(item.name)} ${normalize(item.scientificName)}`.includes(
@@ -2244,13 +2268,12 @@ function App() {
       setProtocolChecks((current) => current.filter((log) => log.id !== existing.id))
       setProtocolLogs((current) => current.filter((log) => log.id !== existing.id))
       if (isSupabaseEnabled && authUser) {
-        try {
+        enqueueCloudWrite('Excluir check de protocolo', async () => {
           await deleteCloudProtocolCheck(existing.id)
+        })
+        enqueueCloudWrite('Excluir log de protocolo', async () => {
           await deleteCloudProtocolLog(existing.id)
-          setSyncState('online')
-        } catch {
-          setSyncState('error')
-        }
+        })
       }
       return
     }
@@ -2278,33 +2301,46 @@ function App() {
     ])
     setProtocolNote('')
     if (isSupabaseEnabled && authUser) {
-      try {
+      if (definition) {
+        enqueueCloudWrite('Definição de protocolo', async () => {
+          await upsertCloudProtocolDefinition(
+            {
+              protocolKey: definition.key,
+              label: definition.label,
+              days: definition.days,
+              quantity: definition.quantity,
+              unit: definition.unit,
+            },
+            authUser.id,
+          )
+        })
+      }
+      enqueueCloudWrite('Check de protocolo', async () => {
         await upsertCloudProtocolCheck(
           {
-          id: newCheck.id,
-          protocolKey: newCheck.protocolKey,
-          weekStart: newCheck.weekStart,
-          dayIndex: newCheck.dayIndex,
-          checkedAt: newCheck.checkedAt,
-          quantity: newCheck.quantity,
-          unit: newCheck.unit,
-          note: newCheck.note,
+            id: newCheck.id,
+            protocolKey: newCheck.protocolKey,
+            weekStart: newCheck.weekStart,
+            dayIndex: newCheck.dayIndex,
+            checkedAt: newCheck.checkedAt,
+            quantity: newCheck.quantity,
+            unit: newCheck.unit,
+            note: newCheck.note,
           },
           authUser.id,
         )
+      })
+      enqueueCloudWrite('Log de protocolo', async () => {
         await upsertCloudProtocolLog(
           {
-          id: newCheck.id,
-          protocolKey: newCheck.protocolKey,
-          performedAt: newCheck.checkedAt,
-          note: newCheck.note,
+            id: newCheck.id,
+            protocolKey: newCheck.protocolKey,
+            performedAt: newCheck.checkedAt,
+            note: newCheck.note,
           },
           authUser.id,
         )
-        setSyncState('online')
-      } catch {
-        setSyncState('error')
-      }
+      })
     }
   }
 
@@ -2312,13 +2348,12 @@ function App() {
     setProtocolChecks((current) => current.filter((item) => item.id !== entryId))
     setProtocolLogs((current) => current.filter((item) => item.id !== entryId))
     if (isSupabaseEnabled && authUser) {
-      try {
+      enqueueCloudWrite('Excluir check de protocolo', async () => {
         await deleteCloudProtocolCheck(entryId)
+      })
+      enqueueCloudWrite('Excluir log de protocolo', async () => {
         await deleteCloudProtocolLog(entryId)
-        setSyncState('online')
-      } catch {
-        setSyncState('error')
-      }
+      })
     }
   }
 
@@ -2349,21 +2384,18 @@ function App() {
     if (isSupabaseEnabled && authUser) {
       const saved = next.find((d) => d.key === key)
       if (!saved) return
-      try {
+      enqueueCloudWrite('Definição de protocolo', async () => {
         await upsertCloudProtocolDefinition(
           {
-          protocolKey: saved.key,
-          label: saved.label,
-          days: saved.days,
-          quantity: saved.quantity,
-          unit: saved.unit,
+            protocolKey: saved.key,
+            label: saved.label,
+            days: saved.days,
+            quantity: saved.quantity,
+            unit: saved.unit,
           },
           authUser.id,
         )
-        setSyncState('online')
-      } catch {
-        setSyncState('error')
-      }
+      })
     }
   }
 
@@ -2372,14 +2404,15 @@ function App() {
     setProtocolChecks((current) => current.filter((item) => item.protocolKey !== key))
     setProtocolLogs((current) => current.filter((item) => item.protocolKey !== key))
     if (isSupabaseEnabled && authUser) {
-      try {
+      enqueueCloudWrite('Excluir checks do protocolo', async () => {
         await deleteCloudProtocolChecksByKey(key)
+      })
+      enqueueCloudWrite('Excluir logs do protocolo', async () => {
         await deleteCloudProtocolLogsByKey(key)
+      })
+      enqueueCloudWrite('Excluir definição do protocolo', async () => {
         await deleteCloudProtocolDefinition(key)
-        setSyncState('online')
-      } catch {
-        setSyncState('error')
-      }
+      })
     }
   }
 
@@ -2441,12 +2474,9 @@ function App() {
     if (isSupabaseEnabled && authUser) {
       const saved = next.find((item) => item.id === lightingEditingId)
       if (!saved) return
-      try {
+      enqueueCloudWrite('Fase de iluminação', async () => {
         await upsertCloudLightingPhase(saved, authUser.id)
-        setSyncState('online')
-      } catch {
-        setSyncState('error')
-      }
+      })
     }
   }
 
@@ -2466,7 +2496,7 @@ function App() {
     setProtocolAddUnit('ml')
     setIsProtocolModalOpen(false)
     if (isSupabaseEnabled && authUser) {
-      try {
+      enqueueCloudWrite('Definição de protocolo', async () => {
         await upsertCloudProtocolDefinition(
           {
             protocolKey: newDefinition.key,
@@ -2477,17 +2507,34 @@ function App() {
           },
           authUser.id,
         )
-        setSyncState('online')
-      } catch {
-        setSyncState('error')
-      }
+      })
     }
   }
 
   if (isSupabaseEnabled && isAuthLoading) {
     return (
       <main className="app">
-        <Header mode="loading" message="Carregando login..." />
+        <Header
+          mode="loading"
+          message="Carregando login..."
+          uiSettings={uiSettings}
+          isSupabaseEnabled={isSupabaseEnabled}
+          authUser={authUser}
+          profileAvatarUrl={profileAvatarUrl}
+          isProfileMenuOpen={isProfileMenuOpen}
+          setIsProfileMenuOpen={setIsProfileMenuOpen}
+          handleRequestAvatarChange={handleRequestAvatarChange}
+          handleOpenSettings={handleOpenSettings}
+          handleRemoveAvatar={handleRemoveAvatar}
+          handleLogout={handleLogout}
+          avatarInputRef={avatarInputRef}
+          handleAvatarChange={handleAvatarChange}
+          syncState={syncState === 'online' && pendingWrites > 0 ? 'syncing' : syncState}
+          syncErrorDetail={syncErrorDetail}
+          pendingWrites={pendingWrites}
+          storageError={storageError}
+          onRetrySync={handleRetrySync}
+        />
       </main>
     )
   }
@@ -2528,9 +2575,61 @@ function App() {
 
   return (
     <main className="app">
-      <Header mode="main" />
-      <ParameterAlertModal />
-      <SettingsModal />
+      <Header
+        mode="main"
+        uiSettings={uiSettings}
+        isSupabaseEnabled={isSupabaseEnabled}
+        authUser={authUser}
+        profileAvatarUrl={profileAvatarUrl}
+        isProfileMenuOpen={isProfileMenuOpen}
+        setIsProfileMenuOpen={setIsProfileMenuOpen}
+        handleRequestAvatarChange={handleRequestAvatarChange}
+        handleOpenSettings={handleOpenSettings}
+        handleRemoveAvatar={handleRemoveAvatar}
+        handleLogout={handleLogout}
+        avatarInputRef={avatarInputRef}
+        handleAvatarChange={handleAvatarChange}
+        syncState={syncState === 'online' && pendingWrites > 0 ? 'syncing' : syncState}
+        syncErrorDetail={syncErrorDetail}
+        pendingWrites={pendingWrites}
+        storageError={storageError}
+        onRetrySync={handleRetrySync}
+      />
+      <ParameterAlertModal alert={parameterAlert} onClose={() => setParameterAlert(null)} />
+      {isSettingsOpen && (
+        <SettingsModal
+          uiSettings={uiSettings}
+          defaultTitle={DEFAULT_UI_SETTINGS.title}
+          onClose={handleCloseSettings}
+          onSave={handleSaveUiSettings}
+        />
+      )}
+      {animalDetailsEntry && (
+        <AnimalDetailsModal
+          entry={animalDetailsEntry}
+          catalogEntry={
+            animalDetailsCatalogEntry ??
+            findCatalogMatch(animalDetailsEntry.name) ??
+            (animalDetailsEntry.scientificName.trim()
+              ? findCatalogMatch(animalDetailsEntry.scientificName)
+              : null) ??
+            null
+          }
+          requirementState={animalRequirementState}
+          requirement={animalRequirement}
+          formatDate={formatDate}
+          onClose={closeAnimalDetails}
+          onEdit={() => {
+            handleStartEditBioEntry(animalDetailsEntry)
+            closeAnimalDetails()
+            setActiveTab('inventario')
+          }}
+          onDelete={() => {
+            void handleDeleteBioEntry(animalDetailsEntry.id)
+            closeAnimalDetails()
+          }}
+        />
+      )}
 
       <nav className="tabs">
         <button
@@ -2566,890 +2665,141 @@ function App() {
       </nav>
 
       {activeTab === 'dashboard' && (
-        <section className="panel">
-          <h2>Status rápido</h2>
-          <div className="cards">
-            {latestByParameter
-              .filter(({ latest }) => Boolean(latest))
-              .sort((a, b) => {
-                const aTime = a.latest ? new Date(a.latest.measuredAt).getTime() : 0
-                const bTime = b.latest ? new Date(b.latest.measuredAt).getTime() : 0
-                return bTime - aTime
-              })
-              .map(({ definition, latest }) => {
-                const insight = parameterInsights.get(definition.key)
-                const projectedDaysToCriticalMin = insight?.projectedDaysToCriticalMin ?? null
-                const projectedDaysToBound = insight?.projectedDaysToBound ?? null
-                const badgeClass =
-                  insight?.badge === 'Ideal'
-                    ? 'ideal'
-                    : insight?.badge === 'Atenção'
-                      ? 'attention'
-                      : insight?.badge === 'Crítico'
-                        ? 'critical'
-                        : 'neutral'
-                const rateLabel =
-                  insight?.dailyRate !== null && insight?.dailyRate !== undefined
-                    ? `${formatSigned(insight.dailyRate, 3)}${definition.unit ? ` ${definition.unit}/dia` : ' /dia'}`
-                    : null
-                const autonomyLabel =
-                  projectedDaysToCriticalMin !== null && Number.isFinite(projectedDaysToCriticalMin)
-                    ? `Limite em ~${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(projectedDaysToCriticalMin)} dias`
-                    : projectedDaysToBound !== null && Number.isFinite(projectedDaysToBound)
-                      ? `Sai do ideal em ~${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(projectedDaysToBound)} dias`
-                      : null
-                return (
-                  <article key={definition.key} className="card">
-                    <span>{definition.label}</span>
-                    <strong>
-                      {latest ? (
-                        <>
-                          <span className={`trend-arrow ${insight?.arrow ?? 'flat'}`}>
-                            {arrowSymbol[insight?.arrow ?? 'flat']}
-                          </span>{' '}
-                          {`${latest.value} ${definition.unit}`.trim()}
-                        </>
-                      ) : (
-                        'Sem medição'
-                      )}
-                    </strong>
-                    <small>
-                      {latest && insight ? (
-                        <>
-                          <span className={`status-badge ${badgeClass}`}>{insight.badge}</span>
-                          {rateLabel ? ` · ${rateLabel}` : ''}
-                          {autonomyLabel ? ` · ${autonomyLabel}` : ''}
-                        </>
-                      ) : (
-                        'Sem histórico'
-                      )}
-                    </small>
-                  </article>
-                )
-              })}
-          </div>
-
-          <div className="chart-box">
-            <div className="chart-head">
-              <h3>Dashboard Geral do Aquário</h3>
-              <select
-                value={dashboardPeriodDays}
-                onChange={(event) =>
-                  setDashboardPeriodDays(Number(event.target.value) as 7 | 30 | 90 | 365)
-                }
-              >
-                <option value={7}>Últimos 7 dias</option>
-                <option value={30}>Últimos 30 dias</option>
-                <option value={90}>Últimos 90 dias</option>
-                <option value={365}>Último ano</option>
-              </select>
-            </div>
-            <div className="chart-frame">
-              <svg viewBox="0 0 320 120" className="chart">
-                {chartPaths.map((item) => (
-                  <g key={item.key}>
-                    {item.laneHeight >= 10 && (
-                      <text x={0} y={item.laneTop - 4} fill="#94a3b8" fontSize={9}>
-                        {item.label}
-                      </text>
-                    )}
-                    {item.laneHeight >= 8 && (
-                      <line
-                        x1={0}
-                        y1={item.laneTop + item.laneHeight}
-                        x2={320}
-                        y2={item.laneTop + item.laneHeight}
-                        stroke="rgba(148, 163, 184, 0.14)"
-                      />
-                    )}
-                    {item.path && <path d={item.path} stroke={item.color} />}
-                    {item.points.map((point, index) => (
-                      <circle
-                        key={`${item.key}-${index}`}
-                        cx={point.x}
-                        cy={point.y}
-                        r={2.4}
-                        fill={item.color}
-                      />
-                    ))}
-                  </g>
-                ))}
-              </svg>
-            </div>
-            <div className="chart-mobile-list">
-              {chartPaths.map((item) => (
-                <div key={item.key} className="chart-mobile-item">
-                  <div className="chart-mobile-head">
-                    <span className="chart-mobile-dot" style={{ backgroundColor: item.color }}></span>
-                    <strong>{item.label}</strong>
-                  </div>
-                  <svg viewBox={`0 0 320 ${item.laneHeight}`} className="chart-mobile-spark">
-                    {item.lanePath && <path d={item.lanePath} stroke={item.color} />}
-                    {item.lanePoints.map((point, index) => (
-                      <circle
-                        key={`${item.key}-m-${index}`}
-                        cx={point.x}
-                        cy={point.y}
-                        r={2.2}
-                        fill={item.color}
-                      />
-                    ))}
-                  </svg>
-                </div>
-              ))}
-              {chartPaths.length === 0 && <span>Sem registros no período.</span>}
-            </div>
-            <div className="legend">
-              {chartPaths.map((item) => (
-                <span key={item.key} className="legend-item">
-                  <i style={{ backgroundColor: item.color }}></i>
-                  {item.label}
-                </span>
-              ))}
-              {chartPaths.length === 0 && <span>Sem registros no período.</span>}
-            </div>
-            {chartPaths.length > 0 && (
-              <div className="chart-note">
-                Escala: normalização 0–100% e tempo por parâmetro (início à esquerda).
-              </div>
-            )}
-          </div>
-
-          <div className="intelligence">
-            <div className="intelligence-head">
-              <h3>Informações</h3>
-              <p>Insights, alertas e lembretes do dia</p>
-            </div>
-
-            {dashboardAlertCards.length > 0 && (
-              <div className="intelligence-block">
-                <h4>Alertas</h4>
-                <div className="insights">
-                  {dashboardAlertCards.map((text) => (
-                    <div key={text} className="insight-card">
-                      {text}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {dashboardInsightCards.length > 0 && (
-              <div className="intelligence-block">
-                <h4>Análises</h4>
-                <div className="insights">
-                  {dashboardInsightCards.map((text) => (
-                    <div key={text} className="insight-card">
-                      {text}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="intelligence-block">
-              <h4>Protocolos de hoje ({dayLabels[(todayProtocolDayIndex + 6) % 7]})</h4>
-              {protocolsDueToday.length === 0 ? (
-                <p className="intelligence-empty">Sem rotinas pendentes para hoje.</p>
-              ) : (
-                <div className="today-protocols">
-                  {protocolsDueToday.map((item) => (
-                    <div key={item.definition.key} className="today-protocol-item">
-                      <div className="today-protocol-main">
-                        <strong>{item.definition.label}</strong>
-                        <span className="today-protocol-meta">
-                          {item.doseLabel}
-                          {item.latest ? ` · Último: ${formatDate(item.latest.checkedAt)}` : ''}
-                        </span>
-                      </div>
-                      <button
-                        className="week-check"
-                        onClick={() => void handleToggleProtocolCheck(item.definition.key, todayProtocolDayIndex)}
-                      >
-                        Pendente
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
+        <DashboardTab
+          latestByParameter={latestByParameter}
+          parameterInsights={parameterInsights}
+          safeZones={safeZones}
+          cloudConsumptionRates={cloudConsumptionRates}
+          formatSigned={formatSigned}
+          arrowSymbol={arrowSymbol}
+          dashboardPeriodDays={dashboardPeriodDays}
+          setDashboardPeriodDays={setDashboardPeriodDays}
+          chartPaths={chartPaths}
+          dashboardAlertCards={dashboardAlertCards}
+          dashboardInsightCards={dashboardInsightCards}
+          dayLabel={dayLabels[(todayProtocolDayIndex + 6) % 7]}
+          protocolsDueToday={protocolsDueToday}
+          formatDate={formatDate}
+          onToggleProtocolCheck={(key, dayIndex) => void handleToggleProtocolCheck(key, dayIndex)}
+          todayProtocolDayIndex={todayProtocolDayIndex}
+        />
       )}
 
       {activeTab === 'parametros' && (
-        <section className="panel">
-          <h2>Registrar parâmetro</h2>
-          <form className="form" onSubmit={handleSubmit}>
-            <label>
-              Parâmetro
-              <select
-                value={parameter}
-                onChange={(event) => setParameter(event.target.value as ParameterKey)}
-              >
-                {parameterDefinitions.map((definition) => (
-                  <option key={definition.key} value={definition.key}>
-                    {definition.label} ({definition.unit || 'sem unidade'})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Valor
-              <input
-                required
-                type="number"
-                step="0.01"
-                value={value}
-                onChange={(event) => setValue(event.target.value)}
-              />
-            </label>
-            <label className="full">
-              Observação
-              <input
-                type="text"
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                placeholder="Opcional"
-              />
-            </label>
-            <button type="submit">Salvar medição</button>
-          </form>
-
-          {lastMeasurementFeedback && (
-            <div className="insight-box">
-              <strong>Resumo do último registro</strong>
-              <div className="insight-lines">
-                <span>
-                  {parameterDefinitions.find((d) => d.key === lastMeasurementFeedback.parameter)?.label}{' '}
-                  em {formatDate(lastMeasurementFeedback.measuredAt)}:{' '}
-                  {new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(
-                    lastMeasurementFeedback.value,
-                  )}
-                </span>
-                {lastMeasurementFeedback.daysBetween !== null &&
-                  Number.isFinite(lastMeasurementFeedback.daysBetween) && (
-                    <span>
-                      Intervalo:{' '}
-                      {lastMeasurementFeedback.daysBetween < 1
-                        ? `${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(lastMeasurementFeedback.daysBetween * 24)} h`
-                        : `${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(lastMeasurementFeedback.daysBetween)} dias`}
-                    </span>
-                  )}
-                {lastMeasurementFeedback.previousValue !== null &&
-                  lastMeasurementFeedback.delta !== null && (
-                    <span>
-                      Δ vs anterior: {formatSigned(lastMeasurementFeedback.delta, 3)}
-                      {lastMeasurementFeedback.dailyRate !== null &&
-                        Number.isFinite(lastMeasurementFeedback.dailyRate) && (
-                          <>
-                            {' '}
-                            · Taxa diária: {formatSigned(lastMeasurementFeedback.dailyRate, 3)}
-                            {parameterDefinitions.find((d) => d.key === lastMeasurementFeedback.parameter)
-                              ?.unit
-                              ? ` ${parameterDefinitions.find((d) => d.key === lastMeasurementFeedback.parameter)?.unit}/dia`
-                              : ' /dia'}
-                          </>
-                        )}
-                    </span>
-                  )}
-                {lastMeasurementFeedback.protocolLabel &&
-                  lastMeasurementFeedback.protocolPerformedAt &&
-                  lastMeasurementFeedback.deltaSinceProtocol !== null && (
-                    <span>
-                      Desde a última dosagem ({lastMeasurementFeedback.protocolLabel} em{' '}
-                      {formatDate(lastMeasurementFeedback.protocolPerformedAt)}): Δ{' '}
-                      {formatSigned(lastMeasurementFeedback.deltaSinceProtocol, 3)}
-                    </span>
-                  )}
-              </div>
-            </div>
-          )}
-
-          <div className="filters">
-            <select
-              value={filterParameter}
-              onChange={(event) =>
-                setFilterParameter(event.target.value as 'todos' | ParameterKey)
-              }
-            >
-              <option value="todos">Todos os parâmetros</option>
-              {parameterDefinitions.map((definition) => (
-                <option key={definition.key} value={definition.key}>
-                  {definition.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={periodDays}
-              onChange={(event) =>
-                setPeriodDays(Number(event.target.value) as 7 | 30 | 90 | 365)
-              }
-            >
-              <option value={7}>Últimos 7 dias</option>
-              <option value={30}>Últimos 30 dias</option>
-              <option value={90}>Últimos 90 dias</option>
-              <option value={365}>Último ano</option>
-            </select>
-          </div>
-
-          <div className="history">
-            {filteredEntries.map((entry) => {
-              const definition = parameterDefinitions.find(
-                (item) => item.key === entry.parameter,
-              )
-              return (
-                <article key={entry.id} className="history-item">
-                  <div>
-                    <strong>{definition?.label}</strong>
-                    <p>{formatDate(entry.measuredAt)}</p>
-                  </div>
-                  <div className="history-actions">
-                    <div className="history-value">
-                      {entry.value} {definition?.unit}
-                    </div>
-                    <button
-                      className="danger-btn"
-                      onClick={() => handleDeleteParameterEntry(entry.id)}
-                    >
-                      Apagar
-                    </button>
-                  </div>
-                </article>
-              )
-            })}
-            {filteredEntries.length === 0 && <p>Nenhuma medição no período.</p>}
-          </div>
-        </section>
+        <ParametersTab
+          parameterDefinitions={parameterDefinitions}
+          parameter={parameter}
+          setParameter={setParameter}
+          value={value}
+          setValue={setValue}
+          note={note}
+          setNote={setNote}
+          onSubmit={handleSubmit}
+          lastMeasurementFeedback={lastMeasurementFeedback}
+          formatDate={formatDate}
+          formatSigned={formatSigned}
+          filterParameter={filterParameter}
+          setFilterParameter={setFilterParameter}
+          periodDays={periodDays}
+          setPeriodDays={setPeriodDays}
+          filteredEntries={filteredEntries}
+          onDeleteEntry={handleDeleteParameterEntry}
+        />
       )}
 
       {activeTab === 'protocolos' && (
-        <section className="panel">
-          <h2>Protocolos e dosagens</h2>
-          <label className="fauna-search">
-            Observação rápida
-            <input
-              type="text"
-              value={protocolNote}
-              onChange={(event) => setProtocolNote(event.target.value)}
-              placeholder="Opcional (ex.: dose ajustada, produto, etc.)"
-            />
-          </label>
-
-          <div className="protocol-toolbar">
-            <button className="secondary-btn" onClick={openAddRoutineModal}>
-              Adicionar rotina
-            </button>
-          </div>
-
-          <div className="history">
-            {protocolDefinitions.map((definition) => {
-              const latest = latestProtocolByKey.get(definition.key)
-              const scheduledDays = definition.days.slice().sort((a, b) => a - b)
-              const doseLabel =
-                definition.quantity === null
-                  ? 'Sem quantidade'
-                  : `${definition.quantity} ${definition.unit}`.trim()
-              return (
-                <article key={definition.key} className="history-item">
-                  <div>
-                    <strong>{definition.label}</strong>
-                    <p>
-                      {formatDays(scheduledDays)} · {doseLabel}
-                      {latest ? ` · Último: ${formatDate(latest.checkedAt)}` : ''}
-                    </p>
-                    <div className="week-checks">
-                      {scheduledDays.map((dayIndex) => (
-                        <button
-                          key={`${definition.key}-${dayIndex}`}
-                          className={
-                            isDoneThisWeek(definition.key, dayIndex)
-                              ? 'week-check active'
-                              : 'week-check'
-                          }
-                          onClick={() => {
-                            void handleToggleProtocolCheck(definition.key, dayIndex)
-                          }}
-                        >
-                          {dayLabels[(dayIndex + 6) % 7]}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="history-actions">
-                    <button
-                      className="secondary-btn"
-                      onClick={() => openEditRoutineModal(definition)}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      className="danger-btn"
-                      onClick={() => {
-                        void handleDeleteRoutine(definition.key)
-                      }}
-                    >
-                      Excluir
-                    </button>
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-
-          {isProtocolModalOpen && (
-            <div className="modal-backdrop" onClick={closeProtocolModal}>
-              <div className="modal" onClick={(event) => event.stopPropagation()}>
-                <div className="modal-head">
-                  <h3>
-                    {protocolModalMode === 'add' ? 'Adicionar rotina' : 'Editar rotina'}
-                  </h3>
-                  <button className="secondary-btn" onClick={closeProtocolModal}>
-                    Fechar
-                  </button>
-                </div>
-
-                {protocolModalMode === 'add' && (
-                  <>
-                    <label className="fauna-search">
-                      Nome da rotina
-                      <input
-                        type="text"
-                        value={protocolAddLabel}
-                        onChange={(event) => setProtocolAddLabel(event.target.value)}
-                        placeholder="Ex.: Alimentar, Dosar iodo, Limpar skimmer"
-                      />
-                    </label>
-                    <div className="week-checks">
-                      {Array.from({ length: 7 }).map((_, index) => (
-                        <button
-                          key={`add-routine-${index}`}
-                          className={
-                            protocolAddDays.includes(index)
-                              ? 'week-check active'
-                              : 'week-check'
-                          }
-                          onClick={() => {
-                            setProtocolAddDays((current) =>
-                              current.includes(index)
-                                ? current.filter((d) => d !== index)
-                                : [...current, index],
-                            )
-                          }}
-                        >
-                          {dayLabels[(index + 6) % 7]}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="protocol-dose">
-                      <label>
-                        Quantidade
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={protocolAddQuantity}
-                          onChange={(event) => setProtocolAddQuantity(event.target.value)}
-                          placeholder="Opcional"
-                        />
-                      </label>
-                      <label>
-                        Unidade
-                        <input
-                          type="text"
-                          value={protocolAddUnit}
-                          onChange={(event) => setProtocolAddUnit(event.target.value)}
-                        />
-                      </label>
-                    </div>
-                    <div className="modal-actions">
-                      <button className="secondary-btn" onClick={() => void handleAddRoutine()}>
-                        Adicionar
-                      </button>
-                      <button className="danger-btn" onClick={closeProtocolModal}>
-                        Cancelar
-                      </button>
-                    </div>
-                  </>
-                )}
-
-                {protocolModalMode === 'edit' && protocolEditingKey && (
-                  <>
-                    <label className="fauna-search">
-                      Nome da rotina
-                      <input
-                        type="text"
-                        value={protocolEditLabel}
-                        onChange={(event) => setProtocolEditLabel(event.target.value)}
-                      />
-                    </label>
-                    <div className="week-checks">
-                      {Array.from({ length: 7 }).map((_, index) => (
-                        <button
-                          key={`edit-routine-${index}`}
-                          className={
-                            protocolEditDays.includes(index)
-                              ? 'week-check active'
-                              : 'week-check'
-                          }
-                          onClick={() => {
-                            setProtocolEditDays((current) =>
-                              current.includes(index)
-                                ? current.filter((d) => d !== index)
-                                : [...current, index],
-                            )
-                          }}
-                        >
-                          {dayLabels[(index + 6) % 7]}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="protocol-dose">
-                      <label>
-                        Quantidade
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={protocolEditQuantity}
-                          onChange={(event) => setProtocolEditQuantity(event.target.value)}
-                        />
-                      </label>
-                      <label>
-                        Unidade
-                        <input
-                          type="text"
-                          value={protocolEditUnit}
-                          onChange={(event) => setProtocolEditUnit(event.target.value)}
-                        />
-                      </label>
-                    </div>
-                    <div className="modal-actions">
-                      <button
-                        className="secondary-btn"
-                        onClick={() => void handleSaveProtocol(protocolEditingKey)}
-                      >
-                        Salvar
-                      </button>
-                      <button className="danger-btn" onClick={closeProtocolModal}>
-                        Cancelar
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
-          <h3 className="subsection-title">Histórico</h3>
-          <div className="history">
-            {protocolChecksSorted.slice(0, 30).map((log) => {
-              const def = protocolDefinitions.find((d) => d.key === log.protocolKey)
-              return (
-                <article key={log.id} className="history-item">
-                  <div>
-                    <strong>{def?.label ?? log.protocolKey}</strong>
-                    <p>
-                      {formatDate(log.checkedAt)}
-                      {log.quantity !== null ? ` · ${log.quantity} ${log.unit}`.trim() : ''}
-                      {log.note ? ` · ${log.note}` : ''}
-                    </p>
-                  </div>
-                  <div className="history-actions">
-                    <button
-                      className="danger-btn"
-                      onClick={() => {
-                        void handleDeleteProtocolHistoryEntry(log.id)
-                      }}
-                    >
-                      Apagar
-                    </button>
-                  </div>
-                </article>
-              )
-            })}
-            {protocolChecksSorted.length === 0 && <p>Nenhum registro de protocolo.</p>}
-          </div>
-        </section>
+        <ProtocolsTab
+          protocolNote={protocolNote}
+          setProtocolNote={setProtocolNote}
+          protocolDefinitions={protocolDefinitions}
+          latestProtocolByKey={latestProtocolByKey}
+          formatDays={formatDays}
+          formatDate={formatDate}
+          dayLabels={dayLabels}
+          isDoneThisWeek={isDoneThisWeek}
+          onToggleProtocolCheck={(key, dayIndex) => void handleToggleProtocolCheck(key, dayIndex)}
+          openAddRoutineModal={openAddRoutineModal}
+          openEditRoutineModal={openEditRoutineModal}
+          onDeleteRoutine={(key) => void handleDeleteRoutine(key)}
+          protocolChecksSorted={protocolChecksSorted}
+          onDeleteProtocolHistoryEntry={(id) => void handleDeleteProtocolHistoryEntry(id)}
+          isProtocolModalOpen={isProtocolModalOpen}
+          closeProtocolModal={closeProtocolModal}
+          protocolModalMode={protocolModalMode}
+          protocolEditingKey={protocolEditingKey}
+          protocolAddLabel={protocolAddLabel}
+          setProtocolAddLabel={setProtocolAddLabel}
+          protocolAddDays={protocolAddDays}
+          setProtocolAddDays={setProtocolAddDays}
+          protocolAddQuantity={protocolAddQuantity}
+          setProtocolAddQuantity={setProtocolAddQuantity}
+          protocolAddUnit={protocolAddUnit}
+          setProtocolAddUnit={setProtocolAddUnit}
+          onAddRoutine={() => void handleAddRoutine()}
+          protocolEditLabel={protocolEditLabel}
+          setProtocolEditLabel={setProtocolEditLabel}
+          protocolEditDays={protocolEditDays}
+          setProtocolEditDays={setProtocolEditDays}
+          protocolEditQuantity={protocolEditQuantity}
+          setProtocolEditQuantity={setProtocolEditQuantity}
+          protocolEditUnit={protocolEditUnit}
+          setProtocolEditUnit={setProtocolEditUnit}
+          onSaveProtocol={(key) => void handleSaveProtocol(key)}
+        />
       )}
 
       {activeTab === 'iluminacao' && (
-        <section className="panel">
-          <h2>Iluminação (Rampa de LED)</h2>
-          <p className="helper">
-            Edite horários e potências reais por canal. 19:30 é o desligamento.
-          </p>
-
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Fase</th>
-                  <th>Horário</th>
-                  <th>R (UV)</th>
-                  <th>G (Branco)</th>
-                  <th>B (Azul)</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {lightingPhases
-                  .slice()
-                  .sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time))
-                  .map((phase) => (
-                    <tr key={phase.id}>
-                      <td>{phase.name}</td>
-                      <td>{phase.time}</td>
-                      <td>{phase.uv}</td>
-                      <td>{phase.white}</td>
-                      <td>{phase.blue}</td>
-                      <td className="table-actions">
-                        <button
-                          className="secondary-btn"
-                          onClick={() => openEditLightingModal(phase)}
-                        >
-                          Editar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-
-          {isLightingModalOpen && (
-            <div className="modal-backdrop" onClick={closeLightingModal}>
-              <div className="modal" onClick={(event) => event.stopPropagation()}>
-                <div className="modal-head">
-                  <h3>Editar fase</h3>
-                  <button className="secondary-btn" onClick={closeLightingModal}>
-                    Fechar
-                  </button>
-                </div>
-
-                <label className="fauna-search">
-                  Nome da fase
-                  <input
-                    type="text"
-                    value={lightingEditName}
-                    onChange={(event) => setLightingEditName(event.target.value)}
-                  />
-                </label>
-
-                <div className="protocol-dose">
-                  <label>
-                    Horário
-                    <input
-                      type="time"
-                      value={lightingEditTime}
-                      onChange={(event) => setLightingEditTime(event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    UV
-                    <input
-                      type="number"
-                      value={lightingEditUv}
-                      onChange={(event) => setLightingEditUv(event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Branco
-                    <input
-                      type="number"
-                      value={lightingEditWhite}
-                      onChange={(event) => setLightingEditWhite(event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Azul
-                    <input
-                      type="number"
-                      value={lightingEditBlue}
-                      onChange={(event) => setLightingEditBlue(event.target.value)}
-                    />
-                  </label>
-                </div>
-
-                <div className="modal-actions">
-                  <button className="secondary-btn" onClick={() => void handleSaveLightingPhase()}>
-                    Salvar
-                  </button>
-                  <button className="danger-btn" onClick={closeLightingModal}>
-                    Cancelar
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </section>
+        <LightingTab
+          lightingPhases={lightingPhases}
+          timeToMinutes={timeToMinutes}
+          openEditLightingModal={openEditLightingModal}
+          isLightingModalOpen={isLightingModalOpen}
+          closeLightingModal={closeLightingModal}
+          lightingEditName={lightingEditName}
+          setLightingEditName={setLightingEditName}
+          lightingEditTime={lightingEditTime}
+          setLightingEditTime={setLightingEditTime}
+          lightingEditUv={lightingEditUv}
+          setLightingEditUv={setLightingEditUv}
+          lightingEditWhite={lightingEditWhite}
+          setLightingEditWhite={setLightingEditWhite}
+          lightingEditBlue={lightingEditBlue}
+          setLightingEditBlue={setLightingEditBlue}
+          onSaveLightingPhase={() => void handleSaveLightingPhase()}
+        />
       )}
 
       {activeTab === 'inventario' && (
-        <section className="panel">
-          <h2>Inventário biológico</h2>
-          <form className="form" onSubmit={handleAddBio}>
-            <label>
-              Tipo
-              <select
-                value={bioType}
-                onChange={(event) => setBioType(event.target.value as BioType)}
-              >
-                <option value="peixe">Peixe</option>
-                <option value="coral">Coral</option>
-                <option value="invertebrado">Invertebrado</option>
-              </select>
-            </label>
-            <label>
-              Nome
-              <input
-                required
-                type="text"
-                value={bioName}
-                onChange={(event) => setBioName(event.target.value)}
-                onBlur={() => {
-                  void fillBioByName()
-                }}
-              />
-            </label>
-            <p className="helper full">
-              Ao digitar o nome, o sistema tenta completar nome científico, tipo,
-              posição e observação automaticamente.
-            </p>
-            <button
-              type="button"
-              className="secondary-btn full"
-              onClick={() => {
-                void fillBioByName()
-              }}
-              disabled={isSearchingBio}
-            >
-              {isSearchingBio ? 'Buscando dados...' : 'Buscar dados do nome'}
-            </button>
-            <label>
-              Nome científico
-              <input
-                type="text"
-                value={bioScientificName}
-                onChange={(event) => setBioScientificName(event.target.value)}
-              />
-            </label>
-            <label>
-              Posição no aquário
-              <input
-                type="text"
-                value={bioPosition}
-                onChange={(event) => setBioPosition(event.target.value)}
-              />
-            </label>
-            <label className="full">
-              Observação
-              <input
-                type="text"
-                value={bioNote}
-                onChange={(event) => setBioNote(event.target.value)}
-              />
-            </label>
-            <button type="submit">
-              {bioEditingId ? 'Atualizar organismo' : 'Salvar organismo'}
-            </button>
-            {bioEditingId && (
-              <button
-                type="button"
-                className="secondary-btn full"
-                onClick={handleCancelEditBioEntry}
-              >
-                Cancelar edição
-              </button>
-            )}
-          </form>
-
-          <h3 className="subsection-title">Fauna</h3>
-          <div className="cards fauna-cards">
-            <article className="card">
-              <span>Total</span>
-              <strong>{faunaCounts.todos}</strong>
-            </article>
-            <article className="card">
-              <span>Corais</span>
-              <strong>{faunaCounts.coral}</strong>
-            </article>
-            <article className="card">
-              <span>Invertebrados</span>
-              <strong>{faunaCounts.invertebrado}</strong>
-            </article>
-            <article className="card">
-              <span>Peixes</span>
-              <strong>{faunaCounts.peixe}</strong>
-            </article>
-          </div>
-
-          <div className="subtabs">
-            <button
-              className={faunaSubmenu === 'todos' ? 'active' : ''}
-              onClick={() => setFaunaSubmenu('todos')}
-            >
-              Todos ({faunaCounts.todos})
-            </button>
-            <button
-              className={faunaSubmenu === 'coral' ? 'active' : ''}
-              onClick={() => setFaunaSubmenu('coral')}
-            >
-              Corais ({faunaCounts.coral})
-            </button>
-            <button
-              className={faunaSubmenu === 'invertebrado' ? 'active' : ''}
-              onClick={() => setFaunaSubmenu('invertebrado')}
-            >
-              Invertebrados ({faunaCounts.invertebrado})
-            </button>
-            <button
-              className={faunaSubmenu === 'peixe' ? 'active' : ''}
-              onClick={() => setFaunaSubmenu('peixe')}
-            >
-              Peixes ({faunaCounts.peixe})
-            </button>
-          </div>
-
-          <label className="fauna-search">
-            Buscar animal
-            <input
-              type="text"
-              value={faunaSearch}
-              onChange={(event) => setFaunaSearch(event.target.value)}
-              placeholder="Nome comum ou científico"
-            />
-          </label>
-
-          <div className="history">
-            {faunaItems.map((item) => (
-                <article key={item.id} className="history-item">
-                  <div>
-                    <strong>
-                      {item.name} · {item.type}
-                    </strong>
-                    <p>
-                      {item.scientificName || 'Sem nome científico'} ·{' '}
-                      {item.position || 'Sem posição'} · {formatDate(item.createdAt)}
-                    </p>
-                  </div>
-                  <div className="history-actions">
-                    <button
-                      className="secondary-btn"
-                      onClick={() => handleStartEditBioEntry(item)}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      className="danger-btn"
-                      onClick={() => handleDeleteBioEntry(item.id)}
-                    >
-                      Apagar
-                    </button>
-                  </div>
-                </article>
-              ))}
-            {faunaItems.length === 0 && <p>Nenhum organismo cadastrado neste grupo.</p>}
-          </div>
-        </section>
+        <InventoryTab
+          onSubmitBio={(event) => void handleAddBio(event)}
+          bioType={bioType}
+          setBioType={setBioType}
+          bioName={bioName}
+          setBioName={setBioName}
+          bioScientificName={bioScientificName}
+          setBioScientificName={setBioScientificName}
+          bioPosition={bioPosition}
+          setBioPosition={setBioPosition}
+          bioNote={bioNote}
+          setBioNote={setBioNote}
+          fillBioByName={() => void fillBioByName()}
+          isSearchingBio={isSearchingBio}
+          bioEditingId={bioEditingId}
+          onCancelEditBioEntry={handleCancelEditBioEntry}
+          bioRequirementState={bioRequirementState}
+          bioRequirementPreview={bioRequirementPreview}
+          faunaCounts={faunaCounts}
+          faunaSubmenu={faunaSubmenu}
+          setFaunaSubmenu={setFaunaSubmenu}
+          faunaSearch={faunaSearch}
+          setFaunaSearch={setFaunaSearch}
+          faunaItems={faunaItems}
+          formatDate={formatDate}
+          bioDeepDivePreviewById={bioDeepDivePreviewById}
+          onOpenBioDetails={openAnimalDetails}
+          onStartEditBioEntry={handleStartEditBioEntry}
+          onDeleteBioEntry={handleDeleteBioEntry}
+        />
       )}
     </main>
   )

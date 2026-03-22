@@ -1,0 +1,47 @@
+{
+  "APOLEMICHTHYS TRIMACULATUS": {
+    "enrichment_status": "not_found",
+    "enrichment_source": "liveaquaria",
+    "enrichment_query": "APOLEMICHTHYS TRIMACULATUS",
+    "enrichment_url": null,
+    "enrichment_http_status": null,
+    "enrichment_scraped_at": "2026-03-22T01:31:29.843Z",
+    "enrichment_error": null
+  },
+  "CENTROPYGE ARGI": {
+    "enrichment_status": "not_found",
+    "enrichment_source": "liveaquaria",
+    "enrichment_query": "CENTROPYGE ARGI",
+    "enrichment_url": null,
+    "enrichment_http_status": null,
+    "enrichment_scraped_at": "2026-03-22T01:31:31.987Z",
+    "enrichment_error": null
+  },
+  "CENTROPYGE AURANTIA": {
+    "enrichment_status": "not_found",
+    "enrichment_source": "liveaquaria",
+    "enrichment_query": "CENTROPYGE AURANTIA",
+    "enrichment_url": null,
+    "enrichment_http_status": null,
+    "enrichment_scraped_at": "2026-03-22T01:31:33.964Z",
+    "enrichment_error": null
+  },
+  "CENTROPYGE BICOLOR": {
+    "enrichment_status": "not_found",
+    "enrichment_source": "liveaquaria",
+    "enrichment_query": "CENTROPYGE BICOLOR",
+    "enrichment_url": null,
+    "enrichment_http_status": null,
+    "enrichment_scraped_at": "2026-03-22T01:31:35.909Z",
+    "enrichment_error": null
+  },
+  "CENTROPYGE BISPINOSA": {
+    "enrichment_status": "not_found",
+    "enrichment_source": "liveaquaria",
+    "enrichment_query": "CENTROPYGE BISPINOSA",
+    "enrichment_url": null,
+    "enrichment_http_status": null,
+    "enrichment_scraped_at": "2026-03-22T01:31:37.938Z",
+    "enrichment_error": null
+  }
+}

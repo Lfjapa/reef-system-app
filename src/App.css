@@ -188,6 +188,17 @@
   margin-bottom: 16px;
 }
 
+.sync-status {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.sync-status .sync-badge {
+  margin-bottom: 0;
+}
+
 .sync-badge.online {
   background: #052e16;
   color: #86efac;
@@ -666,6 +677,94 @@
   color: #cbd5e1;
 }
 
+.bio-inventory-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.bio-card {
+  background: #111c35;
+  border: 1px solid #2b3b5a;
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.bio-card-clickable {
+  cursor: pointer;
+}
+
+.bio-card-clickable:hover {
+  border-color: rgba(14, 165, 233, 0.75);
+}
+
+.bio-card-clickable:focus-visible {
+  outline: 2px solid rgba(14, 165, 233, 0.85);
+  outline-offset: 2px;
+}
+
+.bio-card-head {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.bio-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  display: grid;
+  place-items: center;
+  font-size: 1.4rem;
+}
+
+.bio-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.bio-card-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bio-card-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.bio-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.bio-card-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.bio-card-muted {
+  color: #94a3b8;
+  font-size: 0.92rem;
+}
+
+.bio-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .history {
   display: grid;
   gap: 8px;
@@ -734,6 +833,146 @@
   padding: 14px;
   display: grid;
   gap: 10px;
+}
+
+.bio-modal {
+  width: min(820px, 100%);
+}
+
+.bio-modal-header {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: center;
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.bio-modal-avatar {
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  display: grid;
+  place-items: center;
+  font-size: 1.8rem;
+}
+
+.bio-modal-header-text {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bio-modal-name {
+  font-size: 1.25rem;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bio-modal-scientific {
+  color: #94a3b8;
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bio-modal-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bio-modal-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.bio-modal-section {
+  background: #111c35;
+  border: 1px solid #2b3b5a;
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.bio-modal-section h4 {
+  margin: 0;
+}
+
+.bio-modal-kv {
+  display: grid;
+  gap: 8px;
+}
+
+.bio-modal-kv-row {
+  display: grid;
+  gap: 2px;
+}
+
+.bio-modal-k {
+  color: #93c5fd;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.bio-modal-v {
+  color: #e2e8f0;
+}
+
+.bio-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.bio-modal-metric {
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.bio-modal-metric-k {
+  color: #93c5fd;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.bio-modal-metric-v {
+  font-size: 1.05rem;
+}
+
+.bio-modal-muted {
+  color: #94a3b8;
+  font-size: 0.95rem;
+}
+
+.bio-modal-source {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.bio-modal-link {
+  color: #93c5fd;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.bio-modal-link:hover {
+  text-decoration: underline;
 }
 
 .modal-head {

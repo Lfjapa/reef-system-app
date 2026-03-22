@@ -1,0 +1,29 @@
+{
+  "APOLEMICHTHYS TRIMACULATUS": {
+    "enrichment_status": "not_found",
+    "enrichment_source": "liveaquaria",
+    "enrichment_query": "APOLEMICHTHYS TRIMACULATUS",
+    "enrichment_url": null,
+    "enrichment_http_status": 200,
+    "enrichment_scraped_at": "2026-03-22T01:28:24.791Z",
+    "enrichment_error": null
+  },
+  "CENTROPYGE ARGI": {
+    "enrichment_status": "not_found",
+    "enrichment_source": "liveaquaria",
+    "enrichment_query": "CENTROPYGE ARGI",
+    "enrichment_url": null,
+    "enrichment_http_status": 200,
+    "enrichment_scraped_at": "2026-03-22T01:28:27.041Z",
+    "enrichment_error": null
+  },
+  "CENTROPYGE AURANTIA": {
+    "enrichment_status": "not_found",
+    "enrichment_source": "liveaquaria",
+    "enrichment_query": "CENTROPYGE AURANTIA",
+    "enrichment_url": null,
+    "enrichment_http_status": 200,
+    "enrichment_scraped_at": "2026-03-22T01:28:28.607Z",
+    "enrichment_error": null
+  }
+}
