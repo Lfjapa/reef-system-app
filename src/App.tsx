@@ -388,6 +388,20 @@ const formatSigned = (value: number, maximumFractionDigits: number) => {
   return `${sign}${formatted}`
 }
 
+const normalizeTankSettingsSnapshot = (
+  settings: Map<ParameterKey, TankParameterSetting>,
+) =>
+  JSON.stringify(
+    Array.from(settings.values())
+      .map((item) => ({
+        parameter: item.parameter,
+        isCustomEnabled: item.isCustomEnabled,
+        customMin: item.customMin,
+        customMax: item.customMax,
+      }))
+      .sort((a, b) => a.parameter.localeCompare(b.parameter)),
+  )
+
 const pickLatestEntry = (items: ParameterEntry[]) => {
   let latest: ParameterEntry | null = null
   for (const entry of items) {
@@ -689,6 +703,9 @@ function App() {
   const [tankSettings, setTankSettings] = useState<Map<ParameterKey, TankParameterSetting>>(
     () => new Map(),
   )
+  const [savedTankSettings, setSavedTankSettings] = useState<
+    Map<ParameterKey, TankParameterSetting>
+  >(() => new Map())
   const [isSavingTankSettings, setIsSavingTankSettings] = useState<boolean>(false)
   const [cloudConsumptionRates, setCloudConsumptionRates] = useState<Map<ParameterKey, number>>(
     () => new Map(),
@@ -948,7 +965,12 @@ function App() {
 
     setIsSavingTankSettings(true)
     try {
-      if (!isSupabaseEnabled) return
+      if (!isSupabaseEnabled) {
+        setSavedTankSettings(new Map(tankSettings))
+        setSyncState('local')
+        setSyncErrorDetail(null)
+        return
+      }
       const userId = authUser?.id
       if (!userId) return
 
@@ -988,15 +1010,32 @@ function App() {
       }
       setSafeZonesBase(refreshedSafeZoneBaseMap)
       setSafeZones(refreshedSafeZoneMap)
+      setSavedTankSettings(new Map(tankSettings))
       setSyncState('online')
       setSyncErrorDetail(null)
     } catch (error) {
       logError('tank-settings-save', error)
+      const code = (error as { code?: string } | null)?.code ?? ''
+      const message = (error as { message?: string } | null)?.message ?? ''
+      if (code === 'PGRST205' || message.includes("Could not find the table 'public.user_parameter_settings'")) {
+        setSavedTankSettings(new Map(tankSettings))
+        setSyncState('error')
+        setSyncErrorDetail(
+          'Configurações salvas localmente. Para sincronizar na nuvem, aplique o SQL da tabela user_parameter_settings no Supabase.',
+        )
+        return
+      }
       setSyncState('error')
       setSyncErrorDetail(formatSyncError(error))
     } finally {
       setIsSavingTankSettings(false)
     }
+  }
+
+  const handleCancelTankSettings = () => {
+    setTankSettings(new Map(savedTankSettings))
+    setSyncErrorDetail(null)
+    if (!isSupabaseEnabled) setSyncState('local')
   }
 
   useEffect(() => {
@@ -1180,6 +1219,7 @@ function App() {
         setSafeZones(new Map())
         setSafeZonesBase(new Map())
         setTankSettings(new Map())
+        setSavedTankSettings(new Map())
         setCloudConsumptionRates(new Map())
         setSyncState('local')
         return
@@ -1269,6 +1309,7 @@ function App() {
         setSafeZones(finalSafe)
         setSafeZonesBase(baseSafe)
         setTankSettings(localTankSettingsMap)
+        setSavedTankSettings(new Map(localTankSettingsMap))
         setCloudConsumptionRates(new Map())
         setSyncState('local')
         setSyncErrorDetail(null)
@@ -1319,22 +1360,24 @@ function App() {
           consumptionMap.set(row.parameter as ParameterKey, row.dailyRate)
         }
         setCloudConsumptionRates(consumptionMap)
-        setTankSettings(
-          new Map(
-            cloudData.userParameterSettings
-              .filter((item) => Boolean(item.parameter))
-              .map((item) => [
-                item.parameter as ParameterKey,
-                {
-                  parameter: item.parameter as ParameterKey,
-                  isCustomEnabled: item.isCustomEnabled,
-                  customMin: item.customMin,
-                  customMax: item.customMax,
-                  updatedAt: item.updatedAt,
-                },
-              ]),
-          ),
+        const cloudTankSettingsMap = new Map(
+          cloudData.userParameterSettings
+            .filter((item) => Boolean(item.parameter))
+            .map((item) => [
+              item.parameter as ParameterKey,
+              {
+                parameter: item.parameter as ParameterKey,
+                isCustomEnabled: item.isCustomEnabled,
+                customMin: item.customMin,
+                customMax: item.customMax,
+                updatedAt: item.updatedAt,
+              },
+            ]),
         )
+        const effectiveTankSettingsMap =
+          cloudTankSettingsMap.size > 0 ? cloudTankSettingsMap : localTankSettingsMap
+        setTankSettings(new Map(effectiveTankSettingsMap))
+        setSavedTankSettings(new Map(effectiveTankSettingsMap))
         const cloudIsEmpty =
           cloudData.parameters.length === 0 &&
           cloudData.bio.length === 0 &&
@@ -1466,6 +1509,7 @@ function App() {
           setProtocolLogs(localProtocolLogs)
           setLightingPhases(localLighting)
           setTankSettings(localTankSettingsMap)
+          setSavedTankSettings(new Map(localTankSettingsMap))
           const refreshedSafeZoneRows = await fetchSafeZones()
           const refreshedSafeZoneMap = new Map<ParameterKey, { min: number; max: number }>()
           const refreshedSafeZoneBaseMap = new Map<ParameterKey, { min: number; max: number }>()
@@ -1616,6 +1660,7 @@ function App() {
         setSafeZones(finalSafe)
         setSafeZonesBase(baseSafe)
         setTankSettings(localTankSettingsMap)
+        setSavedTankSettings(new Map(localTankSettingsMap))
         setCloudConsumptionRates(new Map())
         setSyncState('error')
         const detail = formatSyncError(error)
@@ -2810,6 +2855,9 @@ function App() {
     }
   }
 
+  const hasPendingTankSettingsChanges =
+    normalizeTankSettingsSnapshot(tankSettings) !== normalizeTankSettingsSnapshot(savedTankSettings)
+
   if (isSupabaseEnabled && isAuthLoading) {
     return (
       <main className="app">
@@ -3135,6 +3183,8 @@ function App() {
               return nextMap
             })
           }}
+          onCancel={handleCancelTankSettings}
+          canCancel={hasPendingTankSettingsChanges}
           onSave={() => void handleSaveTankSettings()}
           isSaving={isSavingTankSettings}
         />

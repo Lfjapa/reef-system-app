@@ -56,7 +56,8 @@ export default function Header({
 }: Props) {
   const initial = (authUser?.email?.trim()?.[0] ?? 'U').toUpperCase()
   const showSubtitle = mode === 'main' && uiSettings.subtitleEnabled
-  const showSyncBadge = syncState !== 'local' || storageError || pendingWrites > 0
+  const showCloudStatus = isSupabaseEnabled && authUser && mode === 'main'
+  const showSyncBadge = Boolean(showCloudStatus || syncState !== 'local' || storageError || pendingWrites > 0)
   const syncBadgeState = storageError ? 'error' : syncState
   const syncBadgeTitle =
     storageError ? storageError : syncState === 'error' && syncErrorDetail ? syncErrorDetail : undefined
@@ -64,6 +65,8 @@ export default function Header({
     ? storageError
     : pendingWrites > 0
       ? `Enviando (${pendingWrites})...`
+      : syncState === 'local'
+        ? 'Sincronização local'
       : syncState === 'online'
         ? 'Sincronização online'
         : syncState === 'syncing'

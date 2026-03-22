@@ -1060,11 +1060,18 @@
 }
 
 .tank-setting-toggle {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
   color: #94a3b8;
   font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.tank-setting-toggle input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
 }
 
 .tank-setting-range {
@@ -1075,6 +1082,7 @@
 .tank-setting-line {
   color: #cbd5e1;
   font-size: 0.95rem;
+  overflow-wrap: anywhere;
 }
 
 .tank-setting-custom {
@@ -1086,6 +1094,24 @@
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.tank-setting-inputs label {
+  display: grid;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+.tank-setting-inputs input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 10px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .tank-range {
@@ -1100,6 +1126,27 @@
   width: 100%;
   height: 34px;
   background: transparent;
+}
+
+.tank-settings-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.tank-settings-save-btn {
+  border: none;
+  border-radius: 10px;
+  background: #0ea5e9;
+  color: #082f49;
+  font-weight: 700;
+  padding: 9px 14px;
+  cursor: pointer;
+}
+
+.tank-settings-save-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 @media (max-width: 520px) {
@@ -1134,6 +1181,15 @@
   .card strong {
     font-size: 1.05rem;
   }
+
+  .tank-setting-inputs {
+    grid-template-columns: 1fr;
+  }
+
+  .tank-settings-actions {
+    flex-direction: column;
+  }
+
 
   .tabs {
     flex-wrap: wrap;

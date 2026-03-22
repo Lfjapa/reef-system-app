@@ -20,6 +20,8 @@ type Props = {
   safeZonesBase: Map<ParameterKey, { min: number; max: number }>
   settings: Map<ParameterKey, TankParameterSetting>
   onChangeSetting: (parameter: ParameterKey, next: TankParameterSetting) => void
+  onCancel: () => void
+  canCancel: boolean
   onSave: () => void
   isSaving: boolean
 }
@@ -44,6 +46,8 @@ export default function TankSettingsTab({
   safeZonesBase,
   settings,
   onChangeSetting,
+  onCancel,
+  canCancel,
   onSave,
   isSaving,
 }: Props) {
@@ -201,10 +205,14 @@ export default function TankSettingsTab({
         })}
       </div>
 
-      <button type="button" className="full" onClick={onSave} disabled={isSaving}>
-        {isSaving ? 'Salvando...' : 'Salvar minhas regras'}
-      </button>
+      <div className="tank-settings-actions">
+        <button type="button" className="secondary-btn" onClick={onCancel} disabled={!canCancel || isSaving}>
+          Cancelar alterações
+        </button>
+        <button type="button" className="tank-settings-save-btn" onClick={onSave} disabled={isSaving}>
+          {isSaving ? 'Salvando...' : 'Salvar minhas regras'}
+        </button>
+      </div>
     </section>
   )
 }
-
