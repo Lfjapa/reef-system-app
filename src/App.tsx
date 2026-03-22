@@ -178,13 +178,46 @@ const normalize = (value: string) =>
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim()
+    .replace(/\s+/g, ' ')
 
-const findInCatalog = (name: string) => {
-  const normalized = normalize(name)
-  return seedBioCatalog.find((entry) =>
-    entry.aliases.some((alias) => normalized.includes(normalize(alias))),
-  )
+const scoreTextMatch = (query: string, text: string) => {
+  if (!query) return 0
+  if (!text) return 0
+  if (text === query) return 100
+  if (text.startsWith(query)) return 90
+  if (text.includes(` ${query}`)) return 80
+  if (text.includes(query)) return 70
+  const tokens = query.split(' ').filter(Boolean)
+  if (!tokens.length) return 0
+  if (tokens.every((token) => text.includes(token))) return 60
+  return 0
 }
+
+const findBestCatalogMatch = (name: string, entries: BioCatalogEntry[]) => {
+  const normalized = normalize(name)
+  if (normalized.length < 2) return null
+  let bestEntry: BioCatalogEntry | null = null
+  let bestScore = 0
+
+  for (const entry of entries) {
+    let entryScore = 0
+    for (const alias of entry.aliases) {
+      const aliasNormalized = normalize(alias)
+      const score = scoreTextMatch(normalized, aliasNormalized)
+      if (score > entryScore) entryScore = score
+      if (entryScore === 100) break
+    }
+    if (entryScore > bestScore) {
+      bestScore = entryScore
+      bestEntry = entry
+      if (bestScore === 100) break
+    }
+  }
+
+  return bestScore >= 60 ? bestEntry : null
+}
+
+const findInCatalog = (name: string) => findBestCatalogMatch(name, seedBioCatalog)
 
 const mergeCatalog = (base: BioCatalogEntry[], extras: BioCatalogEntry[]) => {
   const merged = [...base]
@@ -1942,12 +1975,7 @@ function App() {
     setBioNote('')
   }
 
-  const findCatalogMatch = (name: string) => {
-    const normalized = normalize(name)
-    return catalogEntries.find((entry) =>
-      entry.aliases.some((alias) => normalized.includes(normalize(alias))),
-    )
-  }
+  const findCatalogMatch = (name: string) => findBestCatalogMatch(name, catalogEntries)
 
   const openAnimalDetails = (entry: BioEntry) => {
     setAnimalDetailsEntry(entry)
@@ -2152,9 +2180,35 @@ function App() {
     if (!bioNote.trim()) setBioNote(externalMatch.note)
   }
 
+  const bioNameSuggestions = useMemo(() => {
+    const query = normalize(bioName)
+    if (query.length < 2) return []
+    const seen = new Set<string>()
+    const matches: Array<{ label: string; score: number }> = []
+
+    for (const entry of catalogEntries) {
+      for (const alias of entry.aliases) {
+        const aliasNormalized = normalize(alias)
+        const score = scoreTextMatch(query, aliasNormalized)
+        if (!score) continue
+        if (seen.has(aliasNormalized)) continue
+        seen.add(aliasNormalized)
+        matches.push({ label: alias, score })
+      }
+    }
+
+    return matches
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score
+        return a.label.localeCompare(b.label, 'pt-BR', { sensitivity: 'base' })
+      })
+      .slice(0, 12)
+      .map((match) => match.label)
+  }, [bioName, catalogEntries])
+
   const faunaItems = useMemo(() => {
     const normalizedSearch = normalize(faunaSearch)
-    return bioEntries
+    const filtered = bioEntries
       .filter((item) => item.type === faunaSubmenu)
       .filter((item) =>
         normalizedSearch
@@ -2164,9 +2218,24 @@ function App() {
           : true,
       )
       .slice()
-      .sort(
+
+    if (!normalizedSearch) {
+      return filtered.sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       )
+    }
+
+    return filtered
+      .map((item) => {
+        const nameScore = scoreTextMatch(normalizedSearch, normalize(item.name))
+        const scientificScore = scoreTextMatch(normalizedSearch, normalize(item.scientificName))
+        return { item, score: Math.max(nameScore, scientificScore) }
+      })
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score
+        return new Date(b.item.createdAt).getTime() - new Date(a.item.createdAt).getTime()
+      })
+      .map(({ item }) => item)
   }, [bioEntries, faunaSubmenu, faunaSearch])
 
   const faunaCounts = useMemo(() => {
@@ -2776,6 +2845,7 @@ function App() {
           setBioType={setBioType}
           bioName={bioName}
           setBioName={setBioName}
+          bioNameSuggestions={bioNameSuggestions}
           bioScientificName={bioScientificName}
           setBioScientificName={setBioScientificName}
           bioPosition={bioPosition}

@@ -30,6 +30,7 @@ type Props = {
   setBioType: (value: BioType) => void
   bioName: string
   setBioName: (value: string) => void
+  bioNameSuggestions: string[]
   bioScientificName: string
   setBioScientificName: (value: string) => void
   bioPosition: string
@@ -77,6 +78,7 @@ export default function InventoryTab({
   setBioType,
   bioName,
   setBioName,
+  bioNameSuggestions,
   bioScientificName,
   setBioScientificName,
   bioPosition,
@@ -176,7 +178,14 @@ export default function InventoryTab({
             value={bioName}
             onChange={(event) => setBioName(event.target.value)}
             onBlur={fillBioByName}
+            placeholder="Nome comum ou científico (pode digitar parcial)"
+            list="bio-name-suggestions"
           />
+          <datalist id="bio-name-suggestions">
+            {bioNameSuggestions.map((suggestion) => (
+              <option key={suggestion} value={suggestion} />
+            ))}
+          </datalist>
         </label>
         <p className="helper full">
           Ao digitar o nome, o sistema tenta completar nome científico, tipo, posição e observação automaticamente.
