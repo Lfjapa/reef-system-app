@@ -1,3 +1,7 @@
+import ParameterHealthSummary from './ParameterHealthSummary'
+import type { SmartTip } from '../../hooks/useSmartTips'
+import type { AnimalRiskItem } from '../../hooks/useAnimalsAtRisk'
+
 type TrendArrow = 'up' | 'down' | 'flat'
 type InsightBadge = 'Ideal' | 'Atenção' | 'Crítico' | 'Sem faixa'
 
@@ -73,6 +77,8 @@ type Props = {
   formatDate: (iso: string) => string
   onToggleProtocolCheck: (protocolKey: string, dayIndex: number) => void
   todayProtocolDayIndex: number
+  smartTips?: SmartTip[]
+  animalsAtRisk?: AnimalRiskItem[]
 }
 
 export default function DashboardTab({
@@ -92,6 +98,8 @@ export default function DashboardTab({
   formatDate,
   onToggleProtocolCheck,
   todayProtocolDayIndex,
+  smartTips = [],
+  animalsAtRisk = [],
 }: Props) {
   return (
     <section className="panel">
@@ -186,6 +194,57 @@ export default function DashboardTab({
             )
           })}
       </div>
+
+      <ParameterHealthSummary parameterInsights={parameterInsights} />
+
+      {smartTips.length > 0 && (
+        <div className="smart-tips">
+          <h3 className="smart-tips-title">Alertas Inteligentes</h3>
+          <div className="smart-tips-list">
+            {smartTips.map((tip) => (
+              <div key={tip.id} className={`smart-tip smart-tip--${tip.severity}`}>
+                <span className="smart-tip-icon">
+                  {tip.severity === 'critical' ? '!' : tip.severity === 'warning' ? '⚠' : 'i'}
+                </span>
+                <span className="smart-tip-msg">{tip.message}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {animalsAtRisk.length > 0 && (
+        <div className="animals-at-risk">
+          <h3 className="animals-at-risk-title">Animais em Estresse</h3>
+          <div className="animals-at-risk-list">
+            {animalsAtRisk.map((animal) => (
+              <div key={animal.entryId} className="animal-risk-card">
+                <div className="animal-risk-name">
+                  <span>{animal.name}</span>
+                  {animal.scientificName ? (
+                    <span className="animal-risk-scientific">{animal.scientificName}</span>
+                  ) : null}
+                </div>
+                <div className="animal-risk-violations">
+                  {animal.violations.map((v) => (
+                    <span
+                      key={v.parameter}
+                      className={`status-badge ${v.severity === 'critical' ? 'critical' : 'attention'}`}
+                    >
+                      {v.label}: {new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(v.currentValue)}
+                      {v.requiredMin !== null && v.currentValue < v.requiredMin
+                        ? ` < mín ${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(v.requiredMin)}`
+                        : v.requiredMax !== null && v.currentValue > v.requiredMax
+                          ? ` > máx ${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(v.requiredMax)}`
+                          : ''}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="chart-box">
         <div className="chart-head">

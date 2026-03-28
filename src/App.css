@@ -918,6 +918,12 @@
   gap: 2px;
 }
 
+.bio-modal-kv-row--wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .bio-modal-k {
   color: #93c5fd;
   font-weight: 700;
@@ -1237,4 +1243,299 @@
   .chart-mobile-head strong {
     font-size: 0.95rem;
   }
+}
+
+/* ===== Smart Tips ===== */
+.smart-tips {
+  margin: 16px 0;
+}
+
+.smart-tips-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.75rem;
+}
+
+.smart-tips-list {
+  display: grid;
+  gap: 8px;
+}
+
+.smart-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.smart-tip--critical {
+  background: rgba(220, 38, 38, 0.12);
+  border: 1px solid rgba(220, 38, 38, 0.3);
+  color: #fca5a5;
+}
+
+.smart-tip--warning {
+  background: rgba(245, 158, 11, 0.10);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fde68a;
+}
+
+.smart-tip--info {
+  background: rgba(14, 165, 233, 0.08);
+  border: 1px solid rgba(14, 165, 233, 0.2);
+  color: var(--muted);
+}
+
+.smart-tip-icon {
+  flex-shrink: 0;
+  font-weight: 700;
+  width: 18px;
+  text-align: center;
+}
+
+.smart-tip-msg {
+  flex: 1;
+}
+
+/* ===== Animals at Risk ===== */
+.animals-at-risk {
+  margin: 16px 0;
+}
+
+.animals-at-risk-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 10px;
+}
+
+.animals-at-risk-list {
+  display: grid;
+  gap: 8px;
+}
+
+.animal-risk-card {
+  background: var(--card);
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.animal-risk-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
+.animal-risk-scientific {
+  font-style: italic;
+  font-size: 0.8rem;
+  color: var(--muted-2);
+  font-weight: 400;
+}
+
+.animal-risk-violations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ===== Parameter Health Summary ===== */
+.param-health-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.param-health-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.param-health-icon {
+  font-size: 1rem;
+}
+
+.param-health-count {
+  opacity: 0.85;
+  font-size: 0.75rem;
+}
+
+/* ===== Dosing Calculator ===== */
+.dosing-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.tab-btn {
+  padding: 6px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tab-btn:hover {
+  background: var(--surface-2);
+}
+
+.tab-btn--active {
+  background: var(--brand);
+  color: var(--brand-ink);
+  border-color: var(--brand);
+  font-weight: 600;
+}
+
+.dosing-form {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.field-row {
+  display: grid;
+  gap: 4px;
+}
+
+.field-row label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--brand);
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.dosing-result {
+  background: rgba(14, 165, 233, 0.08);
+  border: 1px solid rgba(14, 165, 233, 0.2);
+  border-radius: 8px;
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.dosing-result-amount {
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.dosing-result-warning {
+  font-size: 0.85rem;
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.08);
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+
+.dosing-result-note {
+  font-size: 0.78rem;
+  color: var(--muted-2);
+  margin: 0;
+}
+
+/* ===== Water Change ===== */
+.water-change-section {
+  margin: 20px 0;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-2);
+}
+
+.water-change-suggestion {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  font-size: 0.875rem;
+  margin-bottom: 10px;
+}
+
+.water-change-meta {
+  font-size: 0.8rem;
+  color: var(--muted-2);
+  margin: 4px 0 12px;
+}
+
+.water-change-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* ===== Compatibility Panel ===== */
+.compatibility-panel {
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg-2));
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-top: 4px;
+}
+
+.compatibility-panel-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+
+.compatibility-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.compatibility-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.compatibility-item--critical { color: var(--danger, #ef4444); }
+.compatibility-item--warning  { color: var(--warning-text, #b45309); }
+.compatibility-item--info     { color: var(--text-1); }
+
+.compatibility-item-msg {
+  flex: 1;
 }

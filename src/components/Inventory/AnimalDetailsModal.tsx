@@ -34,6 +34,14 @@ type BioRequirement = {
   dkhMax: number | null
   source: string | null
   sourceUrl: string | null
+  difficulty?: string | null
+  minTankLiters?: number | null
+  behaviorNotes?: string | null
+  aggressionLevel?: string | null
+  compatibleSpecies?: string[]
+  territoryType?: string | null
+  predatorRisk?: string[]
+  preyRisk?: string[]
 }
 
 type RequirementState = 'idle' | 'loading' | 'found' | 'not_found' | 'error'
@@ -43,6 +51,7 @@ type Props = {
   catalogEntry: BioCatalogEntry | null
   requirementState: RequirementState
   requirement: BioRequirement | null
+  latestValues?: Map<string, number>
   formatDate: (iso: string) => string
   onClose: () => void
   onEdit: () => void
@@ -54,6 +63,7 @@ export default function AnimalDetailsModal({
   catalogEntry,
   requirementState,
   requirement,
+  latestValues,
   formatDate,
   onClose,
   onEdit,
@@ -81,6 +91,41 @@ export default function AnimalDetailsModal({
   const flow = requirement?.flow || null
   const reefCompatible = requirement?.reefCompatible || null
 
+  const paramStatus = (
+    paramKey: string,
+    reqMin: number | null,
+    reqMax: number | null,
+  ): 'ok' | 'warn' | 'bad' | null => {
+    if (!latestValues || reqMin === null || reqMax === null) return null
+    const current = latestValues.get(paramKey)
+    if (current === undefined) return null
+    if (current >= reqMin && current <= reqMax) return 'ok'
+    const deviation =
+      current < reqMin ? (reqMin - current) / reqMin : (current - reqMax) / reqMax
+    return deviation > 0.1 ? 'bad' : 'warn'
+  }
+
+  const statusDot = (status: 'ok' | 'warn' | 'bad' | null) => {
+    if (!status) return null
+    const color = status === 'ok' ? '#22c55e' : status === 'warn' ? '#f59e0b' : '#ef4444'
+    const title = status === 'ok' ? 'Dentro da faixa' : status === 'warn' ? 'Próximo do limite' : 'Fora da faixa'
+    return (
+      <span
+        className="param-status-dot"
+        style={{
+          display: 'inline-block',
+          width: 8,
+          height: 8,
+          borderRadius: '50%',
+          backgroundColor: color,
+          marginLeft: 4,
+          verticalAlign: 'middle',
+        }}
+        title={title}
+      />
+    )
+  }
+
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
       <div className="modal bio-modal">
@@ -101,8 +146,16 @@ export default function AnimalDetailsModal({
             <div className="bio-modal-tags">
               <span className="status-badge neutral">{typeLabel(entry.type)}</span>
               {reefCompatible ? <span className="status-badge ideal">{reefCompatible}</span> : null}
+              {requirement?.difficulty ? (
+                <span className={`status-badge ${requirement.difficulty === 'Iniciante' ? 'ideal' : requirement.difficulty === 'Avançado' ? 'critical' : 'attention'}`}>
+                  {requirement.difficulty}
+                </span>
+              ) : null}
               {lighting ? <span className="status-badge neutral">Luz: {lighting}</span> : null}
               {flow ? <span className="status-badge neutral">Fluxo: {flow}</span> : null}
+              {requirement?.minTankLiters ? (
+                <span className="status-badge neutral">Min: {requirement.minTankLiters} L</span>
+              ) : null}
             </div>
           </div>
         </div>
@@ -137,24 +190,28 @@ export default function AnimalDetailsModal({
                   <span className="bio-modal-metric-k">Temperatura</span>
                   <strong className="bio-modal-metric-v">
                     {formatRange(requirement.tempMinC, requirement.tempMaxC, { maximumFractionDigits: 1 }) ?? '—'} °C
+                    {statusDot(paramStatus('temperatura', requirement.tempMinC, requirement.tempMaxC))}
                   </strong>
                 </div>
                 <div className="bio-modal-metric">
                   <span className="bio-modal-metric-k">Salinidade</span>
                   <strong className="bio-modal-metric-v">
                     {formatRange(requirement.sgMin, requirement.sgMax, { maximumFractionDigits: 3 }) ?? '—'} SG
+                    {statusDot(paramStatus('salinidade', requirement.sgMin, requirement.sgMax))}
                   </strong>
                 </div>
                 <div className="bio-modal-metric">
                   <span className="bio-modal-metric-k">pH</span>
                   <strong className="bio-modal-metric-v">
                     {formatRange(requirement.phMin, requirement.phMax, { maximumFractionDigits: 2 }) ?? '—'}
+                    {statusDot(paramStatus('ph', requirement.phMin, requirement.phMax))}
                   </strong>
                 </div>
                 <div className="bio-modal-metric">
                   <span className="bio-modal-metric-k">KH</span>
                   <strong className="bio-modal-metric-v">
                     {formatRange(requirement.dkhMin, requirement.dkhMax, { maximumFractionDigits: 1 }) ?? '—'} dKH
+                    {statusDot(paramStatus('kh', requirement.dkhMin, requirement.dkhMax))}
                   </strong>
                 </div>
               </div>
@@ -173,13 +230,80 @@ export default function AnimalDetailsModal({
 
           <section className="bio-modal-section">
             <h4>Compatibilidade e manejo</h4>
-            <div className="bio-modal-muted">
-              {catalogEntry?.note || 'Sem dados extras de manejo no catálogo.'}
-            </div>
-            {requirement?.waterConditions ? (
-              <div className="bio-modal-muted">Condições: {requirement.waterConditions}</div>
-            ) : null}
+            {requirement ? (
+              <div className="bio-modal-kv">
+                {requirement.aggressionLevel ? (
+                  <div className="bio-modal-kv-row">
+                    <span className="bio-modal-k">Agressividade</span>
+                    <span className={`status-badge ${
+                      requirement.aggressionLevel === 'Pacífico' ? 'ideal'
+                      : requirement.aggressionLevel === 'Semi-agressivo' ? 'attention'
+                      : 'critical'
+                    }`}>{requirement.aggressionLevel}</span>
+                  </div>
+                ) : null}
+                {requirement.territoryType ? (
+                  <div className="bio-modal-kv-row">
+                    <span className="bio-modal-k">Território</span>
+                    <span className="bio-modal-v">{requirement.territoryType}</span>
+                  </div>
+                ) : null}
+                {requirement.waterConditions ? (
+                  <div className="bio-modal-kv-row">
+                    <span className="bio-modal-k">Condições</span>
+                    <span className="bio-modal-v">{requirement.waterConditions}</span>
+                  </div>
+                ) : null}
+                {requirement.compatibleSpecies && requirement.compatibleSpecies.length > 0 ? (
+                  <div className="bio-modal-kv-row bio-modal-kv-row--wrap">
+                    <span className="bio-modal-k">Compatível com</span>
+                    <span className="bio-modal-tags">
+                      {requirement.compatibleSpecies.map((s) => (
+                        <span key={s} className="status-badge ideal">{s}</span>
+                      ))}
+                    </span>
+                  </div>
+                ) : null}
+                {requirement.predatorRisk && requirement.predatorRisk.length > 0 ? (
+                  <div className="bio-modal-kv-row bio-modal-kv-row--wrap">
+                    <span className="bio-modal-k">Predadores</span>
+                    <span className="bio-modal-tags">
+                      {requirement.predatorRisk.map((s) => (
+                        <span key={s} className="status-badge critical">{s}</span>
+                      ))}
+                    </span>
+                  </div>
+                ) : null}
+                {requirement.preyRisk && requirement.preyRisk.length > 0 ? (
+                  <div className="bio-modal-kv-row bio-modal-kv-row--wrap">
+                    <span className="bio-modal-k">Come / preda</span>
+                    <span className="bio-modal-tags">
+                      {requirement.preyRisk.map((s) => (
+                        <span key={s} className="status-badge attention">{s}</span>
+                      ))}
+                    </span>
+                  </div>
+                ) : null}
+                {!requirement.aggressionLevel
+                  && !requirement.waterConditions
+                  && !requirement.territoryType
+                  && (!requirement.compatibleSpecies || requirement.compatibleSpecies.length === 0)
+                  && (!requirement.predatorRisk || requirement.predatorRisk.length === 0)
+                  && (!requirement.preyRisk || requirement.preyRisk.length === 0) ? (
+                  <div className="bio-modal-muted">Sem dados de compatibilidade cadastrados.</div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="bio-modal-muted">Sem dados de compatibilidade disponíveis.</div>
+            )}
           </section>
+
+          {requirement?.behaviorNotes ? (
+            <section className="bio-modal-section">
+              <h4>Curiosidades e comportamento</h4>
+              <div className="bio-modal-muted">{requirement.behaviorNotes}</div>
+            </section>
+          ) : null}
         </div>
 
         <div className="modal-actions">

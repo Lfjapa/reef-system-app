@@ -104,6 +104,21 @@ export type CloudBioRequirement = {
   dkhMax: number | null
   source: string | null
   sourceUrl: string | null
+  difficulty: string | null
+  minTankLiters: number | null
+  behaviorNotes: string | null
+}
+
+export type CloudUserSettings = {
+  tankVolumeLiters: number
+}
+
+export type CloudWaterChange = {
+  id: string
+  performedAt: string
+  volumeLiters: number | null
+  volumePercent: number | null
+  note: string
 }
 
 const ensureClient = () => {
@@ -423,7 +438,7 @@ export const fetchBioRequirementByScientificName = async (scientificName: string
   const { data, error } = await client
     .from('bio_requirements')
     .select(
-      'scientific_name, reef_compatible, water_conditions, lighting, flow, temp_min_c, temp_max_c, sg_min, sg_max, ph_min, ph_max, dkh_min, dkh_max, source, source_url',
+      'scientific_name, reef_compatible, water_conditions, lighting, flow, temp_min_c, temp_max_c, sg_min, sg_max, ph_min, ph_max, dkh_min, dkh_max, source, source_url, difficulty, min_tank_liters, behavior_notes, aggression_level, compatible_species, territory_type, predator_risk, prey_risk',
     )
     .ilike('scientific_name', pattern)
     .limit(1)
@@ -447,6 +462,14 @@ export const fetchBioRequirementByScientificName = async (scientificName: string
     dkhMax: asOptionalNumber(row.dkh_max),
     source: asString(row.source, '') || null,
     sourceUrl: asString(row.source_url, '') || null,
+    difficulty: asString(row.difficulty, '') || null,
+    minTankLiters: asOptionalNumber(row.min_tank_liters),
+    behaviorNotes: asString(row.behavior_notes, '') || null,
+    aggressionLevel: asString(row.aggression_level, '') || null,
+    compatibleSpecies: asStringArray(row.compatible_species),
+    territoryType: asString(row.territory_type, '') || null,
+    predatorRisk: asStringArray(row.predator_risk),
+    preyRisk: asStringArray(row.prey_risk),
   }
 }
 
@@ -455,7 +478,7 @@ export const fetchBioDeepDiveByEntryId = async (entryId: string) => {
   const { data, error } = await client
     .from('v_bio_deep_dive')
     .select(
-      'bio_entry_id, catalog_primary_alias, catalog_aliases, catalog_type, catalog_scientific_name, catalog_position, catalog_note, req_scientific_name, common_name, group_name, reef_compatible, water_conditions, lighting, flow, temp_min_c, temp_max_c, sg_min, sg_max, ph_min, ph_max, dkh_min, dkh_max, source, source_url',
+      'bio_entry_id, catalog_primary_alias, catalog_aliases, catalog_type, catalog_scientific_name, catalog_position, catalog_note, req_scientific_name, common_name, group_name, reef_compatible, water_conditions, lighting, flow, temp_min_c, temp_max_c, sg_min, sg_max, ph_min, ph_max, dkh_min, dkh_max, source, source_url, difficulty, min_tank_liters, behavior_notes, aggression_level, compatible_species, territory_type, predator_risk, prey_risk',
     )
     .eq('bio_entry_id', entryId)
     .maybeSingle()
@@ -499,8 +522,90 @@ export const fetchBioDeepDiveByEntryId = async (entryId: string) => {
           dkhMax: asOptionalNumber(row.dkh_max),
           source: asString(row.source, '') || null,
           sourceUrl: asString(row.source_url, '') || null,
+          difficulty: asString(row.difficulty, '') || null,
+          minTankLiters: asOptionalNumber(row.min_tank_liters),
+          behaviorNotes: asString(row.behavior_notes, '') || null,
+          aggressionLevel: asString(row.aggression_level, '') || null,
+          compatibleSpecies: asStringArray(row.compatible_species),
+          territoryType: asString(row.territory_type, '') || null,
+          predatorRisk: asStringArray(row.predator_risk),
+          preyRisk: asStringArray(row.prey_risk),
         }
       : null,
+  }
+}
+
+export const fetchCloudUserSettings = async (): Promise<CloudUserSettings | null> => {
+  const client = ensureClient()
+  const { data, error } = await client
+    .from('user_settings')
+    .select('tank_volume_liters')
+    .maybeSingle()
+  if (error) {
+    const code = (error as { code?: string } | null)?.code ?? ''
+    if (code === 'PGRST205' || code === '42P01') return null
+    throw error
+  }
+  if (!data) return null
+  const row = data as Record<string, unknown>
+  return { tankVolumeLiters: asNumber(row.tank_volume_liters, 300) }
+}
+
+export const upsertCloudUserSettings = async (
+  settings: CloudUserSettings,
+  userId: string,
+) => {
+  const client = ensureClient()
+  const { error } = await client.from('user_settings').upsert({
+    user_id: userId,
+    tank_volume_liters: settings.tankVolumeLiters,
+    updated_at: new Date().toISOString(),
+  })
+  if (error) {
+    const code = (error as { code?: string } | null)?.code ?? ''
+    if (code === 'PGRST205' || code === '42P01') return
+    throw error
+  }
+}
+
+export const fetchCloudWaterChanges = async (): Promise<CloudWaterChange[]> => {
+  const client = ensureClient()
+  const { data, error } = await client
+    .from('water_changes')
+    .select('id, performed_at, volume_liters, volume_percent, note')
+    .order('performed_at', { ascending: false })
+    .limit(50)
+  if (error) {
+    const code = (error as { code?: string } | null)?.code ?? ''
+    if (code === 'PGRST205' || code === '42P01') return []
+    throw error
+  }
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    id: asString(row.id),
+    performedAt: asString(row.performed_at),
+    volumeLiters: asOptionalNumber(row.volume_liters),
+    volumePercent: asOptionalNumber(row.volume_percent),
+    note: asString(row.note),
+  }))
+}
+
+export const upsertCloudWaterChange = async (
+  entry: CloudWaterChange,
+  userId: string,
+) => {
+  const client = ensureClient()
+  const { error } = await client.from('water_changes').upsert({
+    id: entry.id,
+    user_id: userId,
+    performed_at: entry.performedAt,
+    volume_liters: entry.volumeLiters,
+    volume_percent: entry.volumePercent,
+    note: entry.note,
+  })
+  if (error) {
+    const code = (error as { code?: string } | null)?.code ?? ''
+    if (code === 'PGRST205' || code === '42P01') return
+    throw error
   }
 }
 
@@ -508,7 +613,9 @@ export const fetchBioDeepDivePreviews = async () => {
   const client = ensureClient()
   const { data, error } = await client
     .from('v_bio_deep_dive')
-    .select('bio_entry_id, reef_compatible, lighting, flow')
+    .select(
+      'bio_entry_id, reef_compatible, lighting, flow, temp_min_c, temp_max_c, sg_min, sg_max, ph_min, ph_max, dkh_min, dkh_max',
+    )
 
   if (error) {
     if ((error as { code?: string } | null)?.code === 'PGRST205') return []
@@ -522,6 +629,14 @@ export const fetchBioDeepDivePreviews = async () => {
       reefCompatible: translateReefCompatible(asString(row.reef_compatible, '') || null),
       lighting: translateLighting(asString(row.lighting, '') || null),
       flow: translateFlow(asString(row.flow, '') || null),
+      tempMinC: asOptionalNumber(row.temp_min_c),
+      tempMaxC: asOptionalNumber(row.temp_max_c),
+      sgMin: asOptionalNumber(row.sg_min),
+      sgMax: asOptionalNumber(row.sg_max),
+      phMin: asOptionalNumber(row.ph_min),
+      phMax: asOptionalNumber(row.ph_max),
+      dkhMin: asOptionalNumber(row.dkh_min),
+      dkhMax: asOptionalNumber(row.dkh_max),
     }))
     .filter((row) => Boolean(row.entryId))
 }

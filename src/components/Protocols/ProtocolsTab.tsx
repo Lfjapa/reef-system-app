@@ -15,6 +15,9 @@ type ProtocolCheckLog = {
   note: string
 }
 
+import { useState } from 'react'
+import type { WaterChangeEntry } from '../../hooks/useWaterChange'
+
 type Props = {
   protocolNote: string
   setProtocolNote: (next: string) => void
@@ -52,6 +55,12 @@ type Props = {
   protocolEditUnit: string
   setProtocolEditUnit: (next: string) => void
   onSaveProtocol: (protocolKey: string) => void
+  onOpenDosingCalculator?: () => void
+  waterChangeSuggestion?: number | null
+  waterChangeSuggestionReason?: string | null
+  waterChangeDaysSinceLast?: number | null
+  recentWaterChanges?: WaterChangeEntry[]
+  onAddWaterChange?: (entry: Omit<WaterChangeEntry, 'id'>) => void
 }
 
 export default function ProtocolsTab({
@@ -91,7 +100,16 @@ export default function ProtocolsTab({
   protocolEditUnit,
   setProtocolEditUnit,
   onSaveProtocol,
+  onOpenDosingCalculator,
+  waterChangeSuggestion,
+  waterChangeSuggestionReason,
+  waterChangeDaysSinceLast,
+  recentWaterChanges = [],
+  onAddWaterChange,
 }: Props) {
+  const [waterChangeVolume, setWaterChangeVolume] = useState<string>('')
+  const [waterChangePercent, setWaterChangePercent] = useState<string>('')
+  const [waterChangeNote, setWaterChangeNote] = useState<string>('')
   return (
     <section className="panel">
       <h2>Protocolos e dosagens</h2>
@@ -109,6 +127,11 @@ export default function ProtocolsTab({
         <button className="secondary-btn" onClick={openAddRoutineModal}>
           Adicionar rotina
         </button>
+        {onOpenDosingCalculator && (
+          <button className="secondary-btn" onClick={onOpenDosingCalculator}>
+            Calculadora de Dosagem
+          </button>
+        )}
       </div>
 
       <div className="history">
@@ -262,6 +285,97 @@ export default function ProtocolsTab({
           </div>
         </div>
       )}
+
+      <div className="water-change-section">
+        <h3 className="subsection-title">Troca Parcial de Água (TPA)</h3>
+        {waterChangeSuggestion !== null && waterChangeSuggestion !== undefined && (
+          <div className="water-change-suggestion">
+            <span className="status-badge attention">Sugestão</span>
+            {' '}Realizar TPA de ~<strong>{waterChangeSuggestion}%</strong>
+            {waterChangeSuggestionReason ? ` · ${waterChangeSuggestionReason}` : ''}
+          </div>
+        )}
+        {waterChangeDaysSinceLast !== null && waterChangeDaysSinceLast !== undefined && (
+          <p className="water-change-meta">
+            Última TPA há {new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(waterChangeDaysSinceLast)} dia(s)
+          </p>
+        )}
+
+        {onAddWaterChange && (
+          <div className="water-change-form">
+            <div className="protocol-dose">
+              <label>
+                Volume (L)
+                <input
+                  type="number"
+                  value={waterChangeVolume}
+                  onChange={(e) => setWaterChangeVolume(e.target.value)}
+                  placeholder="Ex.: 60"
+                  min={1}
+                />
+              </label>
+              <label>
+                Percentual (%)
+                <input
+                  type="number"
+                  value={waterChangePercent}
+                  onChange={(e) => setWaterChangePercent(e.target.value)}
+                  placeholder={waterChangeSuggestion ? String(waterChangeSuggestion) : 'Ex.: 20'}
+                  min={1}
+                  max={100}
+                />
+              </label>
+            </div>
+            <label className="fauna-search">
+              Observação
+              <input
+                type="text"
+                value={waterChangeNote}
+                onChange={(e) => setWaterChangeNote(e.target.value)}
+                placeholder="Opcional"
+              />
+            </label>
+            <button
+              className="secondary-btn"
+              onClick={() => {
+                const vol = parseFloat(waterChangeVolume)
+                const pct = parseFloat(waterChangePercent)
+                onAddWaterChange({
+                  performedAt: new Date().toISOString(),
+                  volumeLiters: Number.isFinite(vol) ? vol : null,
+                  volumePercent: Number.isFinite(pct) ? pct : null,
+                  note: waterChangeNote.trim(),
+                })
+                setWaterChangeVolume('')
+                setWaterChangePercent('')
+                setWaterChangeNote('')
+              }}
+            >
+              Registrar TPA
+            </button>
+          </div>
+        )}
+
+        {recentWaterChanges.length > 0 && (
+          <div className="history">
+            {recentWaterChanges.map((entry) => (
+              <article key={entry.id} className="history-item">
+                <div>
+                  <strong>TPA realizada</strong>
+                  <p>
+                    {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(
+                      new Date(entry.performedAt),
+                    )}
+                    {entry.volumePercent !== null ? ` · ${entry.volumePercent}%` : ''}
+                    {entry.volumeLiters !== null ? ` · ${entry.volumeLiters} L` : ''}
+                    {entry.note ? ` · ${entry.note}` : ''}
+                  </p>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
 
       <h3 className="subsection-title">Histórico</h3>
       <div className="history">

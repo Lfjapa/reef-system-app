@@ -563,13 +563,26 @@ grant select on table public.parameter_dim to authenticated;
 
 insert into public.parameter_dim (key, label, unit, min_ideal, max_ideal, critical_min, critical_max)
 values
-  ('kh', 'KH', 'dKH', 7, 9, 6.5, null),
-  ('calcio', 'Cálcio', 'ppm', 420, 470, null, null),
-  ('magnesio', 'Magnésio', 'ppm', 1250, 1400, null, null),
-  ('salinidade', 'Salinidade', 'sg', 1.024, 1.026, null, null),
-  ('temperatura', 'Temperatura', '°C', 24, 26, null, null),
-  ('ph', 'pH', '', 7.9, 8.4, 7.8, 8.5)
-on conflict (key) do nothing;
+  ('kh',          'KH',                        'dKH',  7,      9,      6.5,  null),
+  ('calcio',      'Cálcio',                    'ppm',  420,    470,    null, null),
+  ('magnesio',    'Magnésio',                  'ppm',  1250,   1400,   null, null),
+  ('salinidade',  'Salinidade',                'sg',   1.024,  1.027,  null, null),
+  ('temperatura', 'Temperatura',               '°C',   25,     26.5,   null, null),
+  ('ph',          'pH',                        '',     7.9,    8.4,    7.8,  8.5),
+  ('amonia',      'Amônia',                    'ppm',  0,      0.1,    null, null),
+  ('nitrito',     'Nitrito',                   'ppm',  0,      0.1,    null, null),
+  ('nitrato',     'Nitrato',                   'ppm',  2,      20,     null, null),
+  ('fosfato',     'Fosfato',                   'ppm',  0.01,   0.1,    null, null),
+  ('silicato',    'Silicato',                  'ppm',  0,      0.5,    null, null),
+  ('iodo',        'Iodo/Estrôncio/Potássio',   'ppm',  null,   null,   null, null)
+on conflict (key) do update set
+  label        = excluded.label,
+  unit         = excluded.unit,
+  min_ideal    = excluded.min_ideal,
+  max_ideal    = excluded.max_ideal,
+  critical_min = excluded.critical_min,
+  critical_max = excluded.critical_max,
+  updated_at   = now();
 
 create or replace view public.v_sistema_seguro as
 with users as (

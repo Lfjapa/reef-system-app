@@ -1,3 +1,6 @@
+import CompatibilityCheckPanel from './CompatibilityCheckPanel'
+import type { CompatibilityWarning } from '../../lib/compatibilityEngine'
+
 type BioType = 'peixe' | 'coral' | 'invertebrado'
 type FaunaSubmenu = BioType
 
@@ -70,6 +73,7 @@ type Props = {
   onOpenBioDetails: (entry: BioEntry) => void
   onStartEditBioEntry: (entry: BioEntry) => void
   onDeleteBioEntry: (entryId: string) => void
+  compatibilityWarnings?: CompatibilityWarning[]
 }
 
 export default function InventoryTab({
@@ -102,6 +106,7 @@ export default function InventoryTab({
   onOpenBioDetails,
   onStartEditBioEntry,
   onDeleteBioEntry,
+  compatibilityWarnings = [],
 }: Props) {
   const typeLabel = (value: BioType) => {
     if (value === 'peixe') return 'Peixes'
@@ -236,6 +241,7 @@ export default function InventoryTab({
           Observação
           <input type="text" value={bioNote} onChange={(event) => setBioNote(event.target.value)} />
         </label>
+        {!bioEditingId && <CompatibilityCheckPanel warnings={compatibilityWarnings} />}
         <button type="submit">{bioEditingId ? 'Atualizar organismo' : 'Salvar organismo'}</button>
         {bioEditingId && (
           <button type="button" className="secondary-btn full" onClick={onCancelEditBioEntry}>

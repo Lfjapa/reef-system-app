@@ -225,7 +225,15 @@ select
   r.dkh_min,
   r.dkh_max,
   r.source,
-  r.source_url
+  r.source_url,
+  r.difficulty,
+  r.min_tank_liters,
+  r.behavior_notes,
+  r.aggression_level,
+  r.compatible_species,
+  r.territory_type,
+  r.predator_risk,
+  r.prey_risk
 from final
 left join lateral (
   select rr.*
