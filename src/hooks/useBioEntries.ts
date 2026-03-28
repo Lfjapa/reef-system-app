@@ -57,6 +57,10 @@ type BioRequirementPreview = {
   territoryType?: string | null
   predatorRisk?: string[]
   preyRisk?: string[]
+  caMin?: number | null
+  caMax?: number | null
+  mgMin?: number | null
+  mgMax?: number | null
 }
 
 type BioDeepDivePreview = {

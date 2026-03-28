@@ -208,6 +208,32 @@ const translateWaterConditions = (value: string | null) => {
     .replace(/No/gi, 'Não')
 }
 
+/** Parses water_conditions — may be a JSON object (corals/invertebrates) or a plain text string (fish).
+ *  Returns a structured object so callers can display Ca/Mg in the chemical profile. */
+const parseWaterConditions = (raw: string | null): {
+  waterConditions: string | null
+  caMin: number | null
+  caMax: number | null
+  mgMin: number | null
+  mgMax: number | null
+} => {
+  if (!raw) return { waterConditions: null, caMin: null, caMax: null, mgMin: null, mgMax: null }
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object') {
+      const caMin = typeof parsed.min_calcio_ppm === 'number' ? parsed.min_calcio_ppm : null
+      const caMax = typeof parsed.max_calcio_ppm === 'number' ? parsed.max_calcio_ppm : null
+      const mgMin = typeof parsed.min_magnesio_ppm === 'number' ? parsed.min_magnesio_ppm : null
+      const mgMax = typeof parsed.max_magnesio_ppm === 'number' ? parsed.max_magnesio_ppm : null
+      // care_level is already covered by the difficulty field — no need to duplicate
+      return { waterConditions: null, caMin, caMax, mgMin, mgMax }
+    }
+  } catch {
+    // not JSON — fall through to plain text handling
+  }
+  return { waterConditions: translateWaterConditions(raw), caMin: null, caMax: null, mgMin: null, mgMax: null }
+}
+
 const asNumberArray = (value: unknown) => {
   if (!Array.isArray(value)) return []
   return value
@@ -446,10 +472,15 @@ export const fetchBioRequirementByScientificName = async (scientificName: string
   if (error) throw error
   if (!data) return null
   const row = data as Record<string, unknown>
+  const wc = parseWaterConditions(asString(row.water_conditions, '') || null)
   return {
     scientificName: asString(row.scientific_name),
     reefCompatible: translateReefCompatible(asString(row.reef_compatible, '') || null),
-    waterConditions: translateWaterConditions(asString(row.water_conditions, '') || null),
+    waterConditions: wc.waterConditions,
+    caMin: wc.caMin,
+    caMax: wc.caMax,
+    mgMin: wc.mgMin,
+    mgMax: wc.mgMax,
     lighting: translateLighting(asString(row.lighting, '') || null),
     flow: translateFlow(asString(row.flow, '') || null),
     tempMinC: asOptionalNumber(row.temp_min_c),
@@ -506,10 +537,16 @@ export const fetchBioDeepDiveByEntryId = async (entryId: string) => {
         }
       : null,
     requirement: reqScientificName
-      ? {
+      ? (() => {
+          const wc2 = parseWaterConditions(asString(row.water_conditions, '') || null)
+          return {
           scientificName: reqScientificName,
           reefCompatible: translateReefCompatible(asString(row.reef_compatible, '') || null),
-          waterConditions: translateWaterConditions(asString(row.water_conditions, '') || null),
+          waterConditions: wc2.waterConditions,
+          caMin: wc2.caMin,
+          caMax: wc2.caMax,
+          mgMin: wc2.mgMin,
+          mgMax: wc2.mgMax,
           lighting: translateLighting(asString(row.lighting, '') || null),
           flow: translateFlow(asString(row.flow, '') || null),
           tempMinC: asOptionalNumber(row.temp_min_c),
@@ -530,7 +567,8 @@ export const fetchBioDeepDiveByEntryId = async (entryId: string) => {
           territoryType: asString(row.territory_type, '') || null,
           predatorRisk: asStringArray(row.predator_risk),
           preyRisk: asStringArray(row.prey_risk),
-        }
+          }
+        })()
       : null,
   }
 }

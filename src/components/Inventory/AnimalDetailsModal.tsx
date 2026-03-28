@@ -42,6 +42,10 @@ type BioRequirement = {
   territoryType?: string | null
   predatorRisk?: string[]
   preyRisk?: string[]
+  caMin?: number | null
+  caMax?: number | null
+  mgMin?: number | null
+  mgMax?: number | null
 }
 
 type RequirementState = 'idle' | 'loading' | 'found' | 'not_found' | 'error'
@@ -214,6 +218,24 @@ export default function AnimalDetailsModal({
                     {statusDot(paramStatus('kh', requirement.dkhMin, requirement.dkhMax))}
                   </strong>
                 </div>
+                {requirement.caMin != null && requirement.caMax != null ? (
+                  <div className="bio-modal-metric">
+                    <span className="bio-modal-metric-k">Cálcio</span>
+                    <strong className="bio-modal-metric-v">
+                      {formatRange(requirement.caMin, requirement.caMax, { maximumFractionDigits: 0 }) ?? '—'} ppm
+                      {statusDot(paramStatus('calcio', requirement.caMin, requirement.caMax))}
+                    </strong>
+                  </div>
+                ) : null}
+                {requirement.mgMin != null && requirement.mgMax != null ? (
+                  <div className="bio-modal-metric">
+                    <span className="bio-modal-metric-k">Magnésio</span>
+                    <strong className="bio-modal-metric-v">
+                      {formatRange(requirement.mgMin, requirement.mgMax, { maximumFractionDigits: 0 }) ?? '—'} ppm
+                      {statusDot(paramStatus('magnesio', requirement.mgMin, requirement.mgMax))}
+                    </strong>
+                  </div>
+                ) : null}
               </div>
             )}
             {requirement?.source ? (
