@@ -617,7 +617,7 @@ ON CONFLICT (scientific_name) DO NOTHING;
 
 -- ── Premnas biaculeatus — compatível com Entacmaea ──
 UPDATE public.bio_requirements SET
-  compatible_species = array_append(COALESCE(compatible_species, '{}'), 'Entacmaea quadricolor'),
+  compatible_species = array_append(COALESCE(compatible_species, '{}'::text[]), 'Entacmaea quadricolor'),
   predator_risk = COALESCE(predator_risk, ARRAY['Pterois volitans (predador de peixes médios)'])
 WHERE scientific_name = 'Premnas biaculeatus';
 
