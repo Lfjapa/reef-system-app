@@ -61,11 +61,11 @@ ORDER BY scientific_name;
 | 1 | `supabase_enrich_bio_requirements.sql` | ✅ Executado |
 | 2 | `supabase_bio_inventory_deep_dive.sql` | ✅ Executado |
 | 3 | `supabase_compatibility_data.sql` | ✅ Executado |
-| 4 | `supabase_user_settings_v2.sql` | 🔴 Pendente |
+| 4 | `supabase_user_settings_v2.sql` | ✅ Executado |
 
 ---
 
-## 🔴 Passo 4 — Informações físicas do aquário
+## ✅ Passo 4 — Informações físicas do aquário
 
 **Arquivo:** `supabase_user_settings_v2.sql`
 
