@@ -353,6 +353,27 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
   subtitleEnabled: true,
 }
 
+type BioEntryForProfile = { name: string; scientificName: string; type: string }
+
+function detectSystemType(entries: BioEntryForProfile[]): string {
+  const corals = entries.filter((e) => e.type === 'coral')
+  if (corals.length === 0) {
+    return entries.length === 0 ? 'Sem inventário' : 'FOWLR (sem corais)'
+  }
+  const match = (entry: BioEntryForProfile, terms: string[]) => {
+    const text = `${entry.name} ${entry.scientificName}`.toLowerCase()
+    return terms.some((t) => text.includes(t))
+  }
+  const SPS = ['acropora', 'montipora', 'pocillopora', 'seriatopora', 'stylophora', 'millepora', 'psammocora', 'pavona', 'turbinaria', 'stylocoeniella']
+  const LPS = ['euphyllia', 'trachyphyllia', 'blastomussa', 'micromussa', 'fungia', 'favia', 'favites', 'lobophyllia', 'duncanopsammia', 'caulastrea', 'catalaphyllia', 'acanthastrea', 'galaxea', 'goniopora', 'alveopora', 'nemenzophyllia', 'leptastrea', 'leptoseris', 'echinophyllia', 'hydnophora', 'pectinia', 'cyphastrea', 'scolymia', 'blastomussa', 'micromussa']
+  const hasSPS = corals.some((e) => match(e, SPS))
+  const hasLPS = corals.some((e) => match(e, LPS))
+  if (hasSPS && hasLPS) return 'Recife misto (SPS + LPS)'
+  if (hasSPS) return 'Recife SPS'
+  if (hasLPS) return 'Recife LPS'
+  return 'Recife (softcorals / zoanthídeos)'
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<
     'dashboard' | 'parametros' | 'protocolos' | 'iluminacao' | 'inventario' | 'configuracoes'
@@ -381,6 +402,19 @@ function App() {
     const n = Number(raw)
     return Number.isFinite(n) && n > 0 ? n : 300
   })
+  const [sumpLiters, setSumpLiters] = useState<number>(() => {
+    const raw = localStorage.getItem('reef-system-sump-liters')
+    if (!raw) return 0
+    const n = Number(raw)
+    return Number.isFinite(n) && n >= 0 ? n : 0
+  })
+  const [rockKg, setRockKg] = useState<number>(() => {
+    const raw = localStorage.getItem('reef-system-rock-kg')
+    if (!raw) return 0
+    const n = Number(raw)
+    return Number.isFinite(n) && n >= 0 ? n : 0
+  })
+  const totalSystemLiters = Math.max(1, Math.round(tankVolumeLiters + sumpLiters - rockKg * 0.5))
   const handleCloudWriteError = useCallback((detail: string) => {
     setSyncState('error')
     setSyncErrorDetail(detail)
@@ -528,6 +562,8 @@ function App() {
     setProtocolLogs,
     setLightingPhases,
     setTankVolumeLiters,
+    setSumpLiters,
+    setRockKg,
   })
 
   useEffect(() => {
@@ -755,6 +791,11 @@ function App() {
     bioEntries,
     parameterInsights,
     protocolLogs,
+    tankInfo: {
+      displayLiters: tankVolumeLiters,
+      totalLiters: totalSystemLiters,
+      systemType: detectSystemType(bioEntries),
+    },
   })
 
   const animalsAtRisk = useAnimalsAtRisk(bioEntries, bioDeepDivePreviewById, latestValuesMap)
@@ -1263,12 +1304,13 @@ function App() {
         <DosingCalculatorModal
           latestValues={latestValuesMap}
           tankVolumeLiters={tankVolumeLiters}
+          totalSystemLiters={totalSystemLiters}
           onTankVolumeChange={(vol) => {
             setTankVolumeLiters(vol)
             localStorage.setItem('reef-system-tank-volume', String(vol))
             if (isSupabaseEnabled && authUser) {
               enqueueCloudWrite('Configurações do aquário', async () => {
-                await upsertCloudUserSettings({ tankVolumeLiters: vol }, authUser.id)
+                await upsertCloudUserSettings({ tankVolumeLiters: vol, sumpLiters, rockKg }, authUser.id)
               })
             }
           }}
@@ -1363,6 +1405,28 @@ function App() {
           canCancel={hasPendingTankSettingsChanges}
           onSave={() => void handleSaveTankSettings()}
           isSaving={isSavingTankSettings}
+          displayTankLiters={tankVolumeLiters}
+          sumpLiters={sumpLiters}
+          rockKg={rockKg}
+          totalSystemLiters={totalSystemLiters}
+          systemType={detectSystemType(bioEntries)}
+          onChangeAquarioInfo={(info) => {
+            setTankVolumeLiters(info.displayTankLiters)
+            setSumpLiters(info.sumpLiters)
+            setRockKg(info.rockKg)
+            localStorage.setItem('reef-system-tank-volume', String(info.displayTankLiters))
+            localStorage.setItem('reef-system-sump-liters', String(info.sumpLiters))
+            localStorage.setItem('reef-system-rock-kg', String(info.rockKg))
+            if (isSupabaseEnabled && authUser) {
+              enqueueCloudWrite('Informações do aquário', async () => {
+                await upsertCloudUserSettings({
+                  tankVolumeLiters: info.displayTankLiters,
+                  sumpLiters: info.sumpLiters,
+                  rockKg: info.rockKg,
+                }, authUser.id)
+              })
+            }
+          }}
         />
       )}
     </main>

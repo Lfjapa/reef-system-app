@@ -60,4 +60,24 @@ ORDER BY scientific_name;
 |-------|---------|--------|
 | 1 | `supabase_enrich_bio_requirements.sql` | ✅ Executado |
 | 2 | `supabase_bio_inventory_deep_dive.sql` | ✅ Executado |
-| 3 | `supabase_compatibility_data.sql` | 🔴 Pendente |
+| 3 | `supabase_compatibility_data.sql` | ✅ Executado |
+| 4 | `supabase_user_settings_v2.sql` | 🔴 Pendente |
+
+---
+
+## 🔴 Passo 4 — Informações físicas do aquário
+
+**Arquivo:** `supabase_user_settings_v2.sql`
+
+**O que faz:** Adiciona `sump_liters` e `rock_kg` à tabela `user_settings`, permitindo salvar volume do sump e estimativa de rocha viva. Esses dados alimentam cálculos de dosagem e smart tips.
+
+**Como fazer:**
+1. Abra o arquivo `supabase_user_settings_v2.sql` (na raiz do projeto)
+2. Copie tudo → cole no Supabase SQL Editor → **Run**
+
+**Verificação:**
+```sql
+SELECT tank_volume_liters, sump_liters, rock_kg,
+       tank_volume_liters + sump_liters - rock_kg*0.5 AS volume_real_l
+FROM public.user_settings;
+```

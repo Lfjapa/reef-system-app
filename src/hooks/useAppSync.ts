@@ -212,6 +212,8 @@ type Props = {
   setProtocolLogs: Dispatch<SetStateAction<ProtocolLog[]>>
   setLightingPhases: Dispatch<SetStateAction<LightingPhase[]>>
   setTankVolumeLiters: Dispatch<SetStateAction<number>>
+  setSumpLiters: Dispatch<SetStateAction<number>>
+  setRockKg: Dispatch<SetStateAction<number>>
 }
 
 export function useAppSync({
@@ -231,6 +233,8 @@ export function useAppSync({
   setProtocolLogs,
   setLightingPhases,
   setTankVolumeLiters,
+  setSumpLiters,
+  setRockKg,
 }: Props) {
   const [storageError, setStorageError] = useState<string | null>(null)
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null)
@@ -728,6 +732,10 @@ export function useAppSync({
           if (userSettings) {
             setTankVolumeLiters(userSettings.tankVolumeLiters)
             localStorage.setItem('reef-system-tank-volume', String(userSettings.tankVolumeLiters))
+            setSumpLiters(userSettings.sumpLiters)
+            localStorage.setItem('reef-system-sump-liters', String(userSettings.sumpLiters))
+            setRockKg(userSettings.rockKg)
+            localStorage.setItem('reef-system-rock-kg', String(userSettings.rockKg))
           }
         } catch {
           // table may not exist yet — silently ignore

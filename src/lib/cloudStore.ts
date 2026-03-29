@@ -110,7 +110,9 @@ export type CloudBioRequirement = {
 }
 
 export type CloudUserSettings = {
-  tankVolumeLiters: number
+  tankVolumeLiters: number  // volume bruto do display / aquário principal
+  sumpLiters: number        // volume do sump (0 se não tiver)
+  rockKg: number            // estimativa de rocha viva em kg
 }
 
 export type CloudWaterChange = {
@@ -577,7 +579,7 @@ export const fetchCloudUserSettings = async (): Promise<CloudUserSettings | null
   const client = ensureClient()
   const { data, error } = await client
     .from('user_settings')
-    .select('tank_volume_liters')
+    .select('tank_volume_liters, sump_liters, rock_kg')
     .maybeSingle()
   if (error) {
     const code = (error as { code?: string } | null)?.code ?? ''
@@ -586,7 +588,11 @@ export const fetchCloudUserSettings = async (): Promise<CloudUserSettings | null
   }
   if (!data) return null
   const row = data as Record<string, unknown>
-  return { tankVolumeLiters: asNumber(row.tank_volume_liters, 300) }
+  return {
+    tankVolumeLiters: asNumber(row.tank_volume_liters, 300),
+    sumpLiters: asNumber(row.sump_liters, 0),
+    rockKg: asNumber(row.rock_kg, 0),
+  }
 }
 
 export const upsertCloudUserSettings = async (
@@ -597,6 +603,8 @@ export const upsertCloudUserSettings = async (
   const { error } = await client.from('user_settings').upsert({
     user_id: userId,
     tank_volume_liters: settings.tankVolumeLiters,
+    sump_liters: settings.sumpLiters,
+    rock_kg: settings.rockKg,
     updated_at: new Date().toISOString(),
   })
   if (error) {

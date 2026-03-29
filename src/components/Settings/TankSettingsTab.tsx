@@ -14,6 +14,12 @@ type TankParameterSetting = {
   customMax: number | null
 }
 
+type AquarioInfo = {
+  displayTankLiters: number
+  sumpLiters: number
+  rockKg: number
+}
+
 type Props = {
   parameterDefinitions: ParameterDefinition[]
   safeZones: Map<ParameterKey, { min: number; max: number }>
@@ -24,6 +30,13 @@ type Props = {
   canCancel: boolean
   onSave: () => void
   isSaving: boolean
+  // Informações físicas do aquário
+  displayTankLiters: number
+  sumpLiters: number
+  rockKg: number
+  totalSystemLiters: number
+  systemType: string
+  onChangeAquarioInfo: (next: AquarioInfo) => void
 }
 
 const stepForParameter = (parameter: ParameterKey) => {
@@ -50,11 +63,100 @@ export default function TankSettingsTab({
   canCancel,
   onSave,
   isSaving,
+  displayTankLiters,
+  sumpLiters,
+  rockKg,
+  totalSystemLiters,
+  systemType,
+  onChangeAquarioInfo,
 }: Props) {
+  const rockDisplacementLiters = Math.round(rockKg * 0.5)
+
+  const handleAquarioField = (field: keyof AquarioInfo, raw: string) => {
+    const n = parseFloat(raw)
+    const value = Number.isFinite(n) && n >= 0 ? n : 0
+    onChangeAquarioInfo({
+      displayTankLiters: field === 'displayTankLiters' ? value : displayTankLiters,
+      sumpLiters: field === 'sumpLiters' ? value : sumpLiters,
+      rockKg: field === 'rockKg' ? value : rockKg,
+    })
+  }
+
   return (
     <section className="panel">
       <h2>Configurações do meu tanque</h2>
-      <p className="helper">
+
+      {/* ── Informações físicas do aquário ── */}
+      <div className="aquario-info-section">
+        <h3 className="aquario-info-title">Informações do aquário</h3>
+        <p className="helper">
+          Usadas nos cálculos de dosagem, smart tips e recomendações de troca d'água.
+          O tipo do sistema é detectado automaticamente pelo inventário.
+        </p>
+        <div className="aquario-info-grid">
+          <label className="aquario-info-field">
+            <span className="bio-modal-k">Display / principal</span>
+            <div className="aquario-info-input-row">
+              <input
+                type="number"
+                min={0}
+                step={10}
+                value={displayTankLiters}
+                onChange={(e) => handleAquarioField('displayTankLiters', e.target.value)}
+                className="aquario-info-input"
+              />
+              <span className="aquario-info-unit">L</span>
+            </div>
+          </label>
+
+          <label className="aquario-info-field">
+            <span className="bio-modal-k">Sump</span>
+            <div className="aquario-info-input-row">
+              <input
+                type="number"
+                min={0}
+                step={5}
+                value={sumpLiters}
+                onChange={(e) => handleAquarioField('sumpLiters', e.target.value)}
+                className="aquario-info-input"
+              />
+              <span className="aquario-info-unit">L</span>
+            </div>
+          </label>
+
+          <label className="aquario-info-field">
+            <span className="bio-modal-k">Rocha viva</span>
+            <div className="aquario-info-input-row">
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={rockKg}
+                onChange={(e) => handleAquarioField('rockKg', e.target.value)}
+                className="aquario-info-input"
+              />
+              <span className="aquario-info-unit">kg</span>
+            </div>
+            <small className="aquario-info-hint">≈ {rockDisplacementLiters} L deslocado</small>
+          </label>
+
+          <div className="aquario-info-result">
+            <span className="bio-modal-k">Volume real estimado</span>
+            <strong className="aquario-info-total">≈ {totalSystemLiters} L</strong>
+            <small className="aquario-info-hint">
+              {displayTankLiters} L display + {sumpLiters} L sump − {rockDisplacementLiters} L rocha
+            </small>
+          </div>
+
+          <div className="aquario-info-system">
+            <span className="bio-modal-k">Perfil do sistema</span>
+            <span className="status-badge neutral">{systemType}</span>
+            <small className="aquario-info-hint">Detectado pelo inventário</small>
+          </div>
+        </div>
+      </div>
+
+      <p className="helper" style={{ marginTop: '1.5rem' }}>
         Ative o modo personalizado para definir seus próprios limites e evitar alertas incorretos quando você roda um
         sistema fora do padrão.
       </p>

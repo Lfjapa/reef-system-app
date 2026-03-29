@@ -5,6 +5,7 @@ type Tab = 'kh' | 'calcio' | 'magnesio' | 'salinidade'
 type Props = {
   latestValues: Map<string, number>
   tankVolumeLiters: number
+  totalSystemLiters?: number
   onTankVolumeChange?: (vol: number) => void
   onClose: () => void
 }
@@ -79,9 +80,9 @@ function computeDose(
   return null
 }
 
-export default function DosingCalculatorModal({ latestValues, tankVolumeLiters, onTankVolumeChange, onClose }: Props) {
+export default function DosingCalculatorModal({ latestValues, tankVolumeLiters, totalSystemLiters, onTankVolumeChange, onClose }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('kh')
-  const [volume, setVolume] = useState<string>(String(tankVolumeLiters))
+  const [volume, setVolume] = useState<string>(String(totalSystemLiters ?? tankVolumeLiters))
   const [current, setCurrent] = useState<string>('')
   const [target, setTarget] = useState<string>('')
 

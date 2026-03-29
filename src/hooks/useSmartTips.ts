@@ -25,6 +25,12 @@ type LatestByParameterItem = {
   latest?: { value: number }
 }
 
+type TankInfo = {
+  displayLiters: number
+  totalLiters: number
+  systemType: string
+}
+
 type Props = {
   latestByParameter: LatestByParameterItem[]
   safeZones: Map<string, { min: number; max: number }>
@@ -32,6 +38,7 @@ type Props = {
   bioEntries: BioEntry[]
   parameterInsights: Map<string, ParameterInsight>
   protocolLogs: ProtocolLog[]
+  tankInfo?: TankInfo
 }
 
 export const useSmartTips = ({
@@ -41,6 +48,7 @@ export const useSmartTips = ({
   bioEntries,
   parameterInsights,
   protocolLogs,
+  tankInfo,
 }: Props): SmartTip[] => {
   const latestValues = useMemo(() => {
     const map = new Map<string, number>()
@@ -59,8 +67,9 @@ export const useSmartTips = ({
         bioEntries,
         parameterInsights,
         protocolLogs,
+        tankInfo,
       ),
-    [latestValues, safeZones, cloudConsumptionRates, bioEntries, parameterInsights, protocolLogs],
+    [latestValues, safeZones, cloudConsumptionRates, bioEntries, parameterInsights, protocolLogs, tankInfo],
   )
 }
 

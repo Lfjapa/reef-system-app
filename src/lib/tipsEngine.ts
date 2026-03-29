@@ -32,6 +32,12 @@ const hasSpeciesLike = (bioEntries: BioEntryMinimal[], terms: string[]) =>
     return terms.some((term) => combined.includes(term.toLowerCase()))
   })
 
+type TankInfo = {
+  displayLiters: number
+  totalLiters: number
+  systemType: string
+}
+
 export const computeSmartTips = (
   latestValues: Map<string, number>,
   safeZones: Map<string, { min: number; max: number }>,
@@ -39,6 +45,7 @@ export const computeSmartTips = (
   bioEntries: BioEntryMinimal[],
   parameterInsights: Map<string, ParameterInsightMinimal>,
   protocolLogs: ProtocolLogSimple[] = [],
+  tankInfo?: TankInfo,
 ): SmartTip[] => {
   const tips: SmartTip[] = []
   const add = (id: string, severity: SmartTip['severity'], message: string) =>
@@ -173,17 +180,18 @@ export const computeSmartTips = (
       : Infinity
     const target = nitratoMax / 2
     const pct = Math.max(10, Math.min(50, Math.round(((nitratoVal - target) / nitratoVal) * 100)))
+    const liters = tankInfo ? ` (≈ ${Math.round(tankInfo.totalLiters * pct / 100)} L)` : ''
     if (!Number.isFinite(daysSince) || daysSince > 10) {
       add(
         'nitrate_tpa_due',
         'warning',
-        `Nitrato elevado (${fmt(nitratoVal, 0)} ppm)${!Number.isFinite(daysSince) ? ' e sem TPA registrado' : ` e sem TPA há ${fmt(daysSince, 0)} dias`}. Sugere-se troca de ~${pct}%.`,
+        `Nitrato elevado (${fmt(nitratoVal, 0)} ppm)${!Number.isFinite(daysSince) ? ' e sem TPA registrado' : ` e sem TPA há ${fmt(daysSince, 0)} dias`}. Sugere-se troca de ~${pct}%${liters}.`,
       )
     } else {
       add(
         'nitrate_high',
         'warning',
-        `Nitrato acima do ideal (${fmt(nitratoVal, 0)} ppm). Sugere-se TPA de ~${pct}% para reduzir.`,
+        `Nitrato acima do ideal (${fmt(nitratoVal, 0)} ppm). Sugere-se TPA de ~${pct}%${liters} para reduzir.`,
       )
     }
   }
@@ -210,11 +218,48 @@ export const computeSmartTips = (
     )
   }
 
+  // Sistema SPS detectado: Ca e KH precisam de atenção diária
+  if (tankInfo?.systemType.includes('SPS')) {
+    const caVal = get('calcio')
+    const khOk = khVal !== null && khSafe && khVal >= khSafe.min && khVal <= khSafe.max
+    const caOk = caVal !== null && safeFor('calcio') ? caVal >= (safeFor('calcio')?.min ?? 0) && caVal <= (safeFor('calcio')?.max ?? 999) : true
+    if (!khOk || !caOk) {
+      add(
+        'sps_param_alert',
+        'warning',
+        `Sistema SPS detectado — KH e Cálcio fora da faixa ideal. Corais SPS são muito sensíveis a variações. Verifique a dosagem.`,
+      )
+    } else if (khRate !== null && Math.abs(khRate) < 0.05 && caRate !== null && Math.abs(caRate) < 1) {
+      add(
+        'sps_low_consumption',
+        'info',
+        `Sistema SPS com consumo de KH e Ca muito baixo — verifique se os corais estão crescendo adequadamente ou se a iluminação está correta.`,
+      )
+    }
+  }
+
+  // Volume do sistema pequeno: aquário nano
+  if (tankInfo && tankInfo.displayLiters < 100 && tankInfo.displayLiters > 0) {
+    const unstableParams = ['kh', 'calcio', 'salinidade'].filter((k) => {
+      const val = get(k)
+      const safe = safeFor(k)
+      return val !== null && safe && (val < safe.min || val > safe.max)
+    })
+    if (unstableParams.length > 0) {
+      add(
+        'nano_instability',
+        'warning',
+        `Aquário nano (${fmt(tankInfo.displayLiters, 0)} L): volume pequeno amplifica variações. Parâmetros instáveis: ${unstableParams.join(', ')}. Monitore diariamente.`,
+      )
+    }
+  }
+
   // All ideal
   if (tips.length === 0) {
     const withData = Array.from(parameterInsights.values()).filter((i) => i.latest !== null)
     if (withData.length >= 3 && withData.every((i) => i.badge === 'Ideal')) {
-      add('all_ideal', 'info', 'Todos os parâmetros monitorados dentro das faixas ideais. Excelente manejo!')
+      const volText = tankInfo ? ` Sistema: ~${fmt(tankInfo.totalLiters, 0)} L.` : ''
+      add('all_ideal', 'info', `Todos os parâmetros monitorados dentro das faixas ideais.${volText} Excelente manejo!`)
     }
   }
 
