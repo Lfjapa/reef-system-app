@@ -62,7 +62,7 @@ ORDER BY scientific_name;
 | 2 | `supabase_bio_inventory_deep_dive.sql` | ✅ Executado |
 | 3 | `supabase_compatibility_data.sql` | ✅ Executado |
 | 4 | `supabase_user_settings_v2.sql` | ✅ Executado |
-| 5 | `supabase_enrich_species_v2.sql` | 🔴 Pendente |
+| 5 | `supabase_enrich_species_v2.sql` | ✅ Executado |
 
 ---
 
@@ -85,7 +85,7 @@ FROM public.user_settings;
 
 ---
 
-## 🔴 Passo 5 — Enriquecimento e expansão do catálogo v2
+## ✅ Passo 5 — Enriquecimento e expansão do catálogo v2
 
 **Arquivo:** `supabase_enrich_species_v2.sql`
 
