@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, Dispatch, SetStateAction } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { Dispatch, SetStateAction } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { isSupabaseEnabled } from '../lib/supabase'
 import { mergeCatalog } from '../lib/catalogUtils'
 import { logError } from '../lib/log'
-import { idbDel, idbGet, idbSet } from '../lib/idb'
+import { useUiSettings } from './useUiSettings'
+import { useProfileAvatar } from './useProfileAvatar'
 import {
   defaultLightingPhasesData,
   defaultProtocolDefinitionsData,
@@ -92,18 +93,6 @@ type TankParameterSetting = {
   customMin: number | null
   customMax: number | null
   updatedAt: string
-}
-
-type UiSettings = {
-  title: string
-  subtitle: string
-  subtitleEnabled: boolean
-}
-
-const DEFAULT_UI_SETTINGS: UiSettings = {
-  title: 'Monitoramento do aquario',
-  subtitle: 'Controle diário do aquário no PC e no celular',
-  subtitleEnabled: true,
 }
 
 const defaultProtocolDefinitions: ProtocolDefinition[] = defaultProtocolDefinitionsData
@@ -237,18 +226,14 @@ export function useAppSync({
   setRockKg,
 }: Props) {
   const [storageError, setStorageError] = useState<string | null>(null)
-  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null)
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState<boolean>(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false)
-  const [uiSettings, setUiSettings] = useState<UiSettings>(DEFAULT_UI_SETTINGS)
   const [safeZones, setSafeZones] = useState<Map<ParameterKey, { min: number; max: number }>>(() => new Map())
   const [safeZonesBase, setSafeZonesBase] = useState<Map<ParameterKey, { min: number; max: number }>>(() => new Map())
   const [tankSettings, setTankSettings] = useState<Map<ParameterKey, TankParameterSetting>>(() => new Map())
   const [savedTankSettings, setSavedTankSettings] = useState<Map<ParameterKey, TankParameterSetting>>(() => new Map())
   const [isSavingTankSettings, setIsSavingTankSettings] = useState<boolean>(false)
   const [cloudConsumptionRates, setCloudConsumptionRates] = useState<Map<ParameterKey, number>>(() => new Map())
-
-  const avatarInputRef = useRef<HTMLInputElement | null>(null)
 
   // ── Storage keys ──
   const entriesStorageKey = isSupabaseEnabled
@@ -305,77 +290,31 @@ export function useAppSync({
     }
   }, [])
 
+  // ── Hooks extraídos: avatar e UI settings ──
+  const { uiSettings, handleSaveUiSettings } = useUiSettings({
+    storageKey: uiSettingsStorageKey,
+    safeLocalStorageSetItem,
+    setIsSettingsOpen,
+  })
+
+  const {
+    profileAvatarUrl,
+    avatarInputRef,
+    handleRequestAvatarChange,
+    handleAvatarChange,
+    handleRemoveAvatar,
+  } = useProfileAvatar({
+    storageKey: profileAvatarStorageKey,
+    safeLocalStorageSetItem,
+    safeLocalStorageRemoveItem,
+    setIsProfileMenuOpen,
+  })
+
   // ── Profile menu clear on auth change ──
   useEffect(() => {
     setIsProfileMenuOpen(false)
     clearCloudWrites()
   }, [authUser?.id, clearCloudWrites])
-
-  // ── Avatar load from idb ──
-  useEffect(() => {
-    if (!profileAvatarStorageKey) {
-      setProfileAvatarUrl(null)
-      return
-    }
-    let alive = true
-    void (async () => {
-      try {
-        const stored = await idbGet(profileAvatarStorageKey)
-        if (!alive) return
-        if (stored) {
-          setProfileAvatarUrl(stored)
-          safeLocalStorageRemoveItem(profileAvatarStorageKey)
-          return
-        }
-        const legacy = localStorage.getItem(profileAvatarStorageKey)
-        if (!alive) return
-        setProfileAvatarUrl(legacy || null)
-        if (legacy) {
-          try {
-            await idbSet(profileAvatarStorageKey, legacy)
-            safeLocalStorageRemoveItem(profileAvatarStorageKey)
-          } catch (error) {
-            logError('avatar-idb-migrate', error)
-          }
-        }
-      } catch (error) {
-        logError('avatar-idb-get', error)
-        if (!alive) return
-        const legacy = localStorage.getItem(profileAvatarStorageKey)
-        setProfileAvatarUrl(legacy || null)
-      }
-    })()
-    return () => { alive = false }
-  }, [profileAvatarStorageKey, safeLocalStorageRemoveItem])
-
-  // ── UI Settings load ──
-  useEffect(() => {
-    if (!uiSettingsStorageKey) {
-      setUiSettings(DEFAULT_UI_SETTINGS)
-      return
-    }
-    const raw = localStorage.getItem(uiSettingsStorageKey)
-    if (!raw) {
-      setUiSettings(DEFAULT_UI_SETTINGS)
-      return
-    }
-    try {
-      const parsed = JSON.parse(raw) as Partial<UiSettings>
-      const rawTitle = typeof parsed.title === 'string' ? parsed.title : null
-      let title = rawTitle ?? DEFAULT_UI_SETTINGS.title
-      const subtitle = typeof parsed.subtitle === 'string' ? parsed.subtitle : DEFAULT_UI_SETTINGS.subtitle
-      const subtitleEnabled = typeof parsed.subtitleEnabled === 'boolean'
-        ? parsed.subtitleEnabled
-        : DEFAULT_UI_SETTINGS.subtitleEnabled
-      if (rawTitle === 'Reef System 300L') {
-        title = DEFAULT_UI_SETTINGS.title
-        safeLocalStorageSetItem(uiSettingsStorageKey, JSON.stringify({ title, subtitle, subtitleEnabled }))
-      }
-      setUiSettings({ title, subtitle, subtitleEnabled })
-    } catch {
-      setUiSettings(DEFAULT_UI_SETTINGS)
-    }
-  }, [uiSettingsStorageKey, safeLocalStorageSetItem])
 
   // ── safeZones derivation ──
   useEffect(() => {
@@ -838,56 +777,6 @@ export function useAppSync({
   }, [])
 
   const handleCloseSettings = useCallback(() => setIsSettingsOpen(false), [])
-
-  const handleRequestAvatarChange = useCallback(() => {
-    avatarInputRef.current?.click()
-  }, [])
-
-  const handleAvatarChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const next = typeof reader.result === 'string' ? reader.result : null
-      if (!next) return
-      setProfileAvatarUrl(next)
-      if (profileAvatarStorageKey) {
-        void (async () => {
-          try {
-            await idbSet(profileAvatarStorageKey, next)
-            safeLocalStorageRemoveItem(profileAvatarStorageKey)
-          } catch (error) {
-            logError('avatar-idb-set', error)
-            safeLocalStorageSetItem(profileAvatarStorageKey, next)
-          }
-        })()
-      }
-      setIsProfileMenuOpen(false)
-    }
-    reader.readAsDataURL(file)
-  }, [profileAvatarStorageKey, safeLocalStorageRemoveItem, safeLocalStorageSetItem])
-
-  const handleRemoveAvatar = useCallback(() => {
-    setProfileAvatarUrl(null)
-    if (profileAvatarStorageKey) {
-      void (async () => {
-        try {
-          await idbDel(profileAvatarStorageKey)
-        } catch (error) {
-          logError('avatar-idb-del', error)
-        }
-        safeLocalStorageRemoveItem(profileAvatarStorageKey)
-      })()
-    }
-    setIsProfileMenuOpen(false)
-  }, [profileAvatarStorageKey, safeLocalStorageRemoveItem])
-
-  const handleSaveUiSettings = useCallback((next: UiSettings) => {
-    setUiSettings(next)
-    if (uiSettingsStorageKey) safeLocalStorageSetItem(uiSettingsStorageKey, JSON.stringify(next))
-    setIsSettingsOpen(false)
-  }, [safeLocalStorageSetItem, uiSettingsStorageKey])
 
   const handleSaveTankSettings = useCallback(async () => {
     if (isSavingTankSettings) return

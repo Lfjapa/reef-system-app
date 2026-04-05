@@ -34,7 +34,7 @@ type Props = {
   setValue: (value: string) => void
   note: string
   setNote: (note: string) => void
-  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
+  onSubmit: (event: import('react').FormEvent<HTMLFormElement>) => void
   lastMeasurementFeedback: LastMeasurementFeedback | null
   formatDate: (iso: string) => string
   formatSigned: (value: number, maximumFractionDigits: number) => string
@@ -44,6 +44,7 @@ type Props = {
   setPeriodDays: (days: 7 | 30 | 90 | 365) => void
   filteredEntries: ParameterEntry[]
   onDeleteEntry: (entryId: string) => void
+  safeZones?: Map<string, { min: number; max: number }>
 }
 
 export default function ParametersTab({
@@ -64,7 +65,38 @@ export default function ParametersTab({
   setPeriodDays,
   filteredEntries,
   onDeleteEntry,
+  safeZones,
 }: Props) {
+  // Inline feedback for the current value being typed
+  const numericValue = parseFloat(value)
+  const safe = safeZones?.get(parameter) ?? null
+  let inputFeedback: { text: string; cls: string } | null = null
+  if (value.trim() !== '' && Number.isFinite(numericValue) && safe) {
+    const { min, max } = safe
+    if (numericValue < min || numericValue > max) {
+      const diff = numericValue < min ? min - numericValue : numericValue - max
+      const pct = (diff / (max - min)) * 100
+      const severity = pct > 20 ? 'critical' : 'attention'
+      inputFeedback = {
+        text: numericValue < min
+          ? `Abaixo do mínimo (${min}) · diferença: ${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(min - numericValue)}`
+          : `Acima do máximo (${max}) · diferença: ${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(numericValue - max)}`,
+        cls: `param-input-feedback param-input-feedback--${severity}`,
+      }
+    } else {
+      // How far inside the safe zone (0 = edge, 1 = center)
+      const span = max - min
+      const distFromEdge = Math.min(numericValue - min, max - numericValue) / (span / 2)
+      if (distFromEdge >= 0.5) {
+        inputFeedback = { text: `Ideal · zona: ${min}–${max}`, cls: 'param-input-feedback param-input-feedback--ideal' }
+      } else {
+        inputFeedback = { text: `Atenção · zona: ${min}–${max}`, cls: 'param-input-feedback param-input-feedback--attention' }
+      }
+    }
+  } else if (value.trim() !== '' && Number.isFinite(numericValue) && !safe) {
+    inputFeedback = { text: 'Sem zona segura configurada', cls: 'param-input-feedback param-input-feedback--neutral' }
+  }
+
   return (
     <section className="panel">
       <h2>Registrar parâmetro</h2>
@@ -88,6 +120,7 @@ export default function ParametersTab({
             value={value}
             onChange={(event) => setValue(event.target.value)}
           />
+          {inputFeedback && <span className={inputFeedback.cls}>{inputFeedback.text}</span>}
         </label>
         <label className="full">
           Observação
@@ -165,6 +198,8 @@ export default function ParametersTab({
       <div className="history">
         {filteredEntries.map((entry) => {
           const definition = parameterDefinitions.find((item) => item.key === entry.parameter)
+          const entrySafe = safeZones?.get(entry.parameter) ?? null
+          const isOut = entrySafe && (entry.value < entrySafe.min || entry.value > entrySafe.max)
           return (
             <article key={entry.id} className="history-item">
               <div>
@@ -172,8 +207,9 @@ export default function ParametersTab({
                 <p>{formatDate(entry.measuredAt)}</p>
               </div>
               <div className="history-actions">
-                <div className="history-value">
+                <div className="history-value" style={isOut ? { color: 'var(--danger)' } : {}}>
                   {entry.value} {definition?.unit}
+                  {isOut ? ' ⚠' : ''}
                 </div>
                 <button className="danger-btn" onClick={() => onDeleteEntry(entry.id)}>
                   Apagar
@@ -187,4 +223,3 @@ export default function ParametersTab({
     </section>
   )
 }
-

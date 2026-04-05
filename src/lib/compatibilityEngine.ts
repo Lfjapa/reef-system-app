@@ -1,5 +1,5 @@
 // Regras de compatibilidade baseadas em conhecimento de aquarismo marinho.
-// Não requer dados extras no banco — usa nome científico + tipo.
+// Combina regras hardcoded com dados enriquecidos do banco (bio_requirements).
 
 export type CompatibilityWarning = {
   severity: 'critical' | 'warning' | 'info'
@@ -15,6 +15,23 @@ type BioEntryLike = {
   name: string
   scientificName: string
   type: 'peixe' | 'coral' | 'invertebrado'
+}
+
+/** Dados opcionais vindos de bio_requirements para enriquecer o diagnóstico. */
+export type DbHints = {
+  /** Nível de agressividade: 'Pacífico' | 'Semi-agressivo' | 'Agressivo' */
+  aggressionLevel?: string | null
+  /** Volume mínimo recomendado do aquário em litros */
+  minTankLiters?: number | null
+  /** Categorias de organismos que esta espécie pode predar (ex: ['invertebrado', 'coral']) */
+  predatorRisk?: string[]
+  /** Categorias de predadores que representam risco a esta espécie */
+  preyRisk?: string[]
+}
+
+/** Informações do aquário passadas para verificação de volume mínimo. */
+export type TankContext = {
+  volumeLiters?: number
 }
 
 const normalize = (s: string) =>
@@ -80,6 +97,8 @@ const isShrimpGoby = (entry: BioEntryLike) =>
 export const checkCompatibility = (
   newEntry: BioEntryLike,
   existingEntries: BioEntryLike[],
+  dbHints?: DbHints,
+  tankContext?: TankContext,
 ): CompatibilityResult => {
   const warnings: CompatibilityWarning[] = []
 
@@ -236,6 +255,63 @@ export const checkCompatibility = (
         severity: 'info',
         message: 'Gobios-sentinela formam parceria simbiótica com camarões-pistola — considere adicionar um Alpheus spp. para comportamento natural.',
       })
+    }
+  }
+
+  // ── Regras baseadas em dados do banco (DbHints) ──
+  if (dbHints) {
+    // Volume mínimo do aquário
+    if (
+      dbHints.minTankLiters &&
+      tankContext?.volumeLiters &&
+      tankContext.volumeLiters < dbHints.minTankLiters
+    ) {
+      const diff = dbHints.minTankLiters - tankContext.volumeLiters
+      warnings.push({
+        severity: diff > 100 ? 'critical' : 'warning',
+        message: `Esta espécie requer aquário de no mínimo ${dbHints.minTankLiters} L. Seu sistema tem ~${Math.round(tankContext.volumeLiters)} L (${Math.round(diff)} L abaixo do recomendado).`,
+      })
+    }
+
+    // Nível de agressividade (complementa as regras hardcoded)
+    if (dbHints.aggressionLevel === 'Agressivo' && existingEntries.length > 0) {
+      const alreadyCovered = isTrigger(newEntry) || isPufferfish(newEntry) || isGrouper(newEntry) ||
+        isDottyback(newEntry) || isAggressiveDamsel(newEntry)
+      if (!alreadyCovered) {
+        warnings.push({
+          severity: 'warning',
+          message: `Classificada como espécie agressiva. Monitore interações com os ${existingEntries.length} organismo(s) já registrado(s) no aquário.`,
+        })
+      }
+    }
+
+    // Risco de predação — categorias que esta espécie pode predar
+    if (dbHints.predatorRisk && dbHints.predatorRisk.length > 0) {
+      const riskLower = dbHints.predatorRisk.map((r) => normalize(r))
+      const atRisk: string[] = []
+
+      if (riskLower.some((r) => r.includes('invertebrado'))) {
+        const victims = existingEntries.filter((e) => e.type === 'invertebrado')
+        if (victims.length > 0) atRisk.push(`${victims.length} invertebrado(s)`)
+      }
+      if (riskLower.some((r) => r.includes('coral'))) {
+        const victims = existingEntries.filter((e) => e.type === 'coral')
+        if (victims.length > 0) atRisk.push(`${victims.length} coral(is)`)
+      }
+      if (riskLower.some((r) => r.includes('peixe'))) {
+        const victims = existingEntries.filter((e) => e.type === 'peixe')
+        if (victims.length > 0) atRisk.push(`${victims.length} peixe(s)`)
+      }
+
+      if (atRisk.length > 0) {
+        const alreadyCovered = isTrigger(newEntry) || isPufferfish(newEntry) || isGrouper(newEntry) || isLionfish(newEntry)
+        if (!alreadyCovered) {
+          warnings.push({
+            severity: 'critical',
+            message: `Dados do banco indicam risco de predação: esta espécie pode predar ${atRisk.join(', ')} presentes no aquário.`,
+          })
+        }
+      }
     }
   }
 

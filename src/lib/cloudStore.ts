@@ -660,7 +660,7 @@ export const fetchBioDeepDivePreviews = async () => {
   const { data, error } = await client
     .from('v_bio_deep_dive')
     .select(
-      'bio_entry_id, reef_compatible, lighting, flow, temp_min_c, temp_max_c, sg_min, sg_max, ph_min, ph_max, dkh_min, dkh_max',
+      'bio_entry_id, reef_compatible, lighting, flow, temp_min_c, temp_max_c, sg_min, sg_max, ph_min, ph_max, dkh_min, dkh_max, aggression_level',
     )
 
   if (error) {
@@ -683,6 +683,7 @@ export const fetchBioDeepDivePreviews = async () => {
       phMax: asOptionalNumber(row.ph_max),
       dkhMin: asOptionalNumber(row.dkh_min),
       dkhMax: asOptionalNumber(row.dkh_max),
+      aggressionLevel: asString(row.aggression_level, '') || null,
     }))
     .filter((row) => Boolean(row.entryId))
 }

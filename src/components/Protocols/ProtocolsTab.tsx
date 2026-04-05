@@ -61,6 +61,7 @@ type Props = {
   waterChangeDaysSinceLast?: number | null
   recentWaterChanges?: WaterChangeEntry[]
   onAddWaterChange?: (entry: Omit<WaterChangeEntry, 'id'>) => void
+  todayProtocolDayIndex?: number
 }
 
 export default function ProtocolsTab({
@@ -106,10 +107,52 @@ export default function ProtocolsTab({
   waterChangeDaysSinceLast,
   recentWaterChanges = [],
   onAddWaterChange,
+  todayProtocolDayIndex = 0,
 }: Props) {
   const [waterChangeVolume, setWaterChangeVolume] = useState<string>('')
   const [waterChangePercent, setWaterChangePercent] = useState<string>('')
   const [waterChangeNote, setWaterChangeNote] = useState<string>('')
+
+  // Render 7-day habit-tracker grid for a protocol
+  function renderHabitGrid(definition: ProtocolDefinition) {
+    return (
+      <div className="habit-grid">
+        {Array.from({ length: 7 }).map((_, index) => {
+          const isScheduled = definition.days.includes(index)
+          const isDone = isDoneThisWeek(definition.key, index)
+          const isToday = index === todayProtocolDayIndex
+          let dotClass = 'habit-cell-dot'
+          let dotContent = ''
+          if (isDone) {
+            dotClass += ' habit-cell-dot--done'
+            dotContent = '✓'
+          } else if (isToday && isScheduled) {
+            dotClass += ' habit-cell-dot--today'
+            dotContent = '·'
+          } else if (isScheduled) {
+            dotClass += ' habit-cell-dot--scheduled'
+            dotContent = '·'
+          } else {
+            dotClass += ' habit-cell-dot--off'
+            dotContent = ''
+          }
+          return (
+            <button
+              key={`${definition.key}-${index}`}
+              className="habit-cell"
+              onClick={() => isScheduled ? onToggleProtocolCheck(definition.key, index) : undefined}
+              disabled={!isScheduled}
+              title={isScheduled ? dayLabels[(index + 6) % 7] : undefined}
+            >
+              <span className="habit-cell-day">{dayLabels[(index + 6) % 7]}</span>
+              <span className={dotClass}>{dotContent}</span>
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+
   return (
     <section className="panel">
       <h2>Protocolos e dosagens</h2>
@@ -141,33 +184,25 @@ export default function ProtocolsTab({
           const doseLabel =
             definition.quantity === null ? 'Sem quantidade' : `${definition.quantity} ${definition.unit}`.trim()
           return (
-            <article key={definition.key} className="history-item">
-              <div>
-                <strong>{definition.label}</strong>
-                <p>
-                  {formatDays(scheduledDays)} · {doseLabel}
-                  {latest ? ` · Último: ${formatDate(latest.checkedAt)}` : ''}
-                </p>
-                <div className="week-checks">
-                  {scheduledDays.map((dayIndex) => (
-                    <button
-                      key={`${definition.key}-${dayIndex}`}
-                      className={isDoneThisWeek(definition.key, dayIndex) ? 'week-check active' : 'week-check'}
-                      onClick={() => onToggleProtocolCheck(definition.key, dayIndex)}
-                    >
-                      {dayLabels[(dayIndex + 6) % 7]}
-                    </button>
-                  ))}
+            <article key={definition.key} className="history-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                <div>
+                  <strong>{definition.label}</strong>
+                  <p>
+                    {formatDays(scheduledDays)} · {doseLabel}
+                    {latest ? ` · Último: ${formatDate(latest.checkedAt)}` : ''}
+                  </p>
+                </div>
+                <div className="history-actions">
+                  <button className="secondary-btn" onClick={() => openEditRoutineModal(definition)}>
+                    Editar
+                  </button>
+                  <button className="danger-btn" onClick={() => onDeleteRoutine(definition.key)}>
+                    Excluir
+                  </button>
                 </div>
               </div>
-              <div className="history-actions">
-                <button className="secondary-btn" onClick={() => openEditRoutineModal(definition)}>
-                  Editar
-                </button>
-                <button className="danger-btn" onClick={() => onDeleteRoutine(definition.key)}>
-                  Excluir
-                </button>
-              </div>
+              {renderHabitGrid(definition)}
             </article>
           )
         })}
@@ -404,4 +439,3 @@ export default function ProtocolsTab({
     </section>
   )
 }
-

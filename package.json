@@ -11,7 +11,9 @@
     "export:bio-requirements": "node tools/export-bio-requirements.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.3",
@@ -33,6 +35,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.57.0",
     "vite": "^8.0.1",
+    "vitest": "^3.2.4",
     "xlsx": "^0.18.5"
   }
 }

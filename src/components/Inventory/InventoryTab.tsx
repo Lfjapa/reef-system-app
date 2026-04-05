@@ -1,5 +1,6 @@
 import CompatibilityCheckPanel from './CompatibilityCheckPanel'
 import type { CompatibilityWarning } from '../../lib/compatibilityEngine'
+import type { AnimalRiskItem } from '../../hooks/useAnimalsAtRisk'
 
 type BioType = 'peixe' | 'coral' | 'invertebrado'
 type FaunaSubmenu = BioType
@@ -18,7 +19,9 @@ type BioDeepDivePreview = {
   reefCompatible: string | null
   lighting: string | null
   flow: string | null
+  aggressionLevel?: string | null
 }
+
 
 type FaunaCounts = {
   todos: number
@@ -74,6 +77,7 @@ type Props = {
   onStartEditBioEntry: (entry: BioEntry) => void
   onDeleteBioEntry: (entryId: string) => void
   compatibilityWarnings?: CompatibilityWarning[]
+  animalsAtRisk?: AnimalRiskItem[]
 }
 
 export default function InventoryTab({
@@ -107,7 +111,9 @@ export default function InventoryTab({
   onStartEditBioEntry,
   onDeleteBioEntry,
   compatibilityWarnings = [],
+  animalsAtRisk = [],
 }: Props) {
+  const atRiskIds = new Set(animalsAtRisk.map((a) => a.entryId))
   const typeLabel = (value: BioType) => {
     if (value === 'peixe') return 'Peixes'
     if (value === 'coral') return 'Corais e anêmonas'
@@ -120,21 +126,19 @@ export default function InventoryTab({
     return '🦐'
   }
 
-  const statusFromNote = (note: string) => {
-    const normalized = note.toLowerCase()
-    if (normalized.includes('agressivo') || normalized.includes('predador')) {
-      return { label: 'Atenção', tone: 'attention' as const }
+  const aggressionStatus = (aggressionLevel: string | null | undefined) => {
+    if (!aggressionLevel) return { label: 'Sem status', tone: 'neutral' as const }
+    const level = aggressionLevel.toLowerCase()
+    if (level.includes('agressi') || level.includes('predador')) {
+      return { label: aggressionLevel, tone: 'critical' as const }
     }
-    if (normalized.includes('semi-agressivo') || normalized.includes('territorial')) {
-      return { label: 'Semi-agressivo', tone: 'attention' as const }
+    if (level.includes('semi') || level.includes('territorial')) {
+      return { label: aggressionLevel, tone: 'attention' as const }
     }
-    if (normalized.includes('pacífico') || normalized.includes('pacifico')) {
-      return { label: 'Pacífico', tone: 'ideal' as const }
+    if (level.includes('pac') || level.includes('docil') || level.includes('dócil')) {
+      return { label: aggressionLevel, tone: 'ideal' as const }
     }
-    if (normalized.includes('difícil') || normalized.includes('dificil')) {
-      return { label: 'Difícil', tone: 'attention' as const }
-    }
-    return { label: 'Sem status', tone: 'neutral' as const }
+    return { label: aggressionLevel, tone: 'neutral' as const }
   }
 
   const renderKeyBadges = (entry: BioEntry, preview: BioDeepDivePreview | null) => {
@@ -297,12 +301,14 @@ export default function InventoryTab({
 
       <div className="cards bio-inventory-grid">
         {faunaItems.map((item) => {
-          const status = statusFromNote(item.note || '')
           const preview = bioDeepDivePreviewById.get(item.id) ?? null
+          const status = aggressionStatus(preview?.aggressionLevel)
+          const isAtRisk = atRiskIds.has(item.id)
+          const riskItem = animalsAtRisk.find((a) => a.entryId === item.id)
           return (
             <article
               key={item.id}
-              className="bio-card bio-card-clickable"
+              className={`bio-card bio-card-clickable${isAtRisk ? ' card--critical' : ''}`}
               role="button"
               tabIndex={0}
               onClick={() => onOpenBioDetails(item)}
@@ -319,7 +325,14 @@ export default function InventoryTab({
                 </div>
                 <div className="bio-card-title">
                   <strong>{item.name}</strong>
-                  <div className={`status-badge ${status.tone}`}>{status.label}</div>
+                  <div className="bio-card-title-badges">
+                    {status.tone !== 'neutral' && (
+                      <div className={`status-badge ${status.tone}`}>{status.label}</div>
+                    )}
+                    {isAtRisk && (
+                      <div className="status-badge critical">⚠ Em risco</div>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="bio-card-meta">
@@ -327,6 +340,25 @@ export default function InventoryTab({
                   <span className="bio-card-muted">{item.scientificName || 'Sem nome científico'}</span>
                 </div>
                 {renderKeyBadges(item, preview)}
+                {isAtRisk && riskItem && (
+                  <div className="bio-card-badges">
+                    {riskItem.violations.map((v) => {
+                      const isBelow = v.requiredMin !== null && v.currentValue < v.requiredMin
+                      const isAbove = v.requiredMax !== null && v.currentValue > v.requiredMax
+                      const diff = isBelow
+                        ? new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(v.requiredMin! - v.currentValue)
+                        : isAbove
+                          ? new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(v.currentValue - v.requiredMax!)
+                          : null
+                      return (
+                        <span key={v.parameter} className="status-badge critical">
+                          {v.label}: {new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 2 }).format(v.currentValue)}
+                          {diff ? (isBelow ? ` ↓${diff}` : ` ↑${diff}`) : ''}
+                        </span>
+                      )
+                    })}
+                  </div>
+                )}
                 <div className="bio-card-line">
                   <span className="bio-card-muted">
                     {item.position || 'Sem posição'} · {formatDate(item.createdAt)}

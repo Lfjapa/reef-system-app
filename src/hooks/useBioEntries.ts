@@ -75,6 +75,7 @@ type BioDeepDivePreview = {
   phMax?: number | null
   dkhMin?: number | null
   dkhMax?: number | null
+  aggressionLevel?: string | null
 }
 
 type RequirementState = 'idle' | 'loading' | 'found' | 'not_found' | 'error'
@@ -228,6 +229,7 @@ export function useBioEntries({ authUser, activeTab, syncReloadNonce, enqueueClo
             phMax: row.phMax,
             dkhMin: row.dkhMin,
             dkhMax: row.dkhMax,
+            aggressionLevel: row.aggressionLevel,
           })
         }
         setBioDeepDivePreviewById(next)
