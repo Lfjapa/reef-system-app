@@ -445,6 +445,7 @@ function App() {
     bioScientificName, setBioScientificName,
     bioPosition, setBioPosition,
     bioNote, setBioNote,
+    bioNickname, setBioNickname,
     bioEditingId,
     bioEntries, setBioEntries,
     catalogEntries, setCatalogEntries,
