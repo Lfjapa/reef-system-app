@@ -1407,6 +1407,8 @@ function App() {
           setBioPosition={setBioPosition}
           bioNote={bioNote}
           setBioNote={setBioNote}
+          bioNickname={bioNickname}
+          setBioNickname={setBioNickname}
           fillBioByName={() => void fillBioByName()}
           isSearchingBio={isSearchingBio}
           bioEditingId={bioEditingId}

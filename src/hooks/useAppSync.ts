@@ -553,7 +553,7 @@ export function useAppSync({
           syncStage = 'Enviando inventário biológico'
           await upsertCloudBios(localBio.map((item) => ({
             id: item.id, type: item.type, name: item.name, scientificName: item.scientificName,
-            position: item.position, note: item.note, createdAt: item.createdAt,
+            position: item.position, note: item.note, nickname: item.nickname ?? '', createdAt: item.createdAt,
           })), userId)
 
           syncStage = 'Enviando catálogo de organismos'
@@ -625,7 +625,8 @@ export function useAppSync({
         }))))
         setBioEntries(cloudData.bio.map((item) => ({
           id: item.id, type: item.type as BioType, name: item.name,
-          scientificName: item.scientificName, position: item.position, note: item.note, createdAt: item.createdAt,
+          scientificName: item.scientificName, position: item.position, note: item.note,
+          nickname: item.nickname ?? '', createdAt: item.createdAt,
         })))
         setCatalogEntries(mergeCatalog(seedBioCatalog, cloudData.catalog.map((item) => ({
           aliases: item.aliases, type: item.type as BioType, scientificName: item.scientificName,

@@ -30,6 +30,7 @@ type BioEntry = {
   scientificName: string
   position: string
   note: string
+  nickname: string
   createdAt: string
 }
 
@@ -111,6 +112,7 @@ export function useBioEntries({ authUser, activeTab, syncReloadNonce, enqueueClo
   const [bioScientificName, setBioScientificName] = useState<string>('')
   const [bioPosition, setBioPosition] = useState<string>('')
   const [bioNote, setBioNote] = useState<string>('')
+  const [bioNickname, setBioNickname] = useState<string>('')
   const [bioEditingId, setBioEditingId] = useState<string | null>(null)
 
   // ── Data state ──
@@ -273,6 +275,7 @@ export function useBioEntries({ authUser, activeTab, syncReloadNonce, enqueueClo
         scientificName: bioScientificName.trim() || catalogMatch?.scientificName || '',
         position: bioPosition.trim() || catalogMatch?.position || '',
         note: bioNote.trim() || catalogMatch?.note || '',
+        nickname: bioNickname.trim(),
         createdAt: existing?.createdAt ?? new Date().toISOString(),
       }
       setBioEntries((current) => {
@@ -289,6 +292,7 @@ export function useBioEntries({ authUser, activeTab, syncReloadNonce, enqueueClo
               scientificName: newBioEntry.scientificName,
               position: newBioEntry.position,
               note: newBioEntry.note,
+              nickname: newBioEntry.nickname,
               createdAt: newBioEntry.createdAt,
             },
             authUser.id,
@@ -299,11 +303,12 @@ export function useBioEntries({ authUser, activeTab, syncReloadNonce, enqueueClo
       setBioScientificName('')
       setBioPosition('')
       setBioNote('')
+      setBioNickname('')
       setBioEditingId(null)
     },
     [
       bioName, bioEditingId, bioEntries, bioType, bioScientificName,
-      bioPosition, bioNote, authUser, findCatalogMatch, enqueueCloudWrite,
+      bioPosition, bioNote, bioNickname, authUser, findCatalogMatch, enqueueCloudWrite,
     ],
   )
 
@@ -316,6 +321,7 @@ export function useBioEntries({ authUser, activeTab, syncReloadNonce, enqueueClo
         setBioScientificName('')
         setBioPosition('')
         setBioNote('')
+        setBioNickname('')
       }
       if (isSupabaseEnabled && authUser) {
         enqueueCloudWrite('Excluir organismo do inventário', async () => {
@@ -333,6 +339,7 @@ export function useBioEntries({ authUser, activeTab, syncReloadNonce, enqueueClo
     setBioScientificName(entry.scientificName)
     setBioPosition(entry.position)
     setBioNote(entry.note)
+    setBioNickname(entry.nickname ?? '')
   }, [])
 
   const handleCancelEditBioEntry = useCallback(() => {
@@ -341,6 +348,7 @@ export function useBioEntries({ authUser, activeTab, syncReloadNonce, enqueueClo
     setBioScientificName('')
     setBioPosition('')
     setBioNote('')
+    setBioNickname('')
   }, [])
 
   const openAnimalDetails = useCallback(
@@ -581,6 +589,7 @@ export function useBioEntries({ authUser, activeTab, syncReloadNonce, enqueueClo
     bioScientificName, setBioScientificName,
     bioPosition, setBioPosition,
     bioNote, setBioNote,
+    bioNickname, setBioNickname,
     bioEditingId,
     // Data
     bioEntries, setBioEntries,

@@ -15,6 +15,7 @@ export type CloudBioEntry = {
   scientificName: string
   position: string
   note: string
+  nickname: string
   createdAt: string
 }
 
@@ -310,6 +311,7 @@ export const fetchCloudData = async () => {
     scientificName: asString(row.scientific_name),
     position: asString(row.position),
     note: asString(row.note),
+    nickname: asString(row.nickname ?? ''),
     createdAt: asString(row.created_at),
   }))
 
@@ -735,6 +737,7 @@ export const upsertCloudBios = async (entries: CloudBioEntry[], userId: string) 
       scientific_name: entry.scientificName,
       position: entry.position,
       note: entry.note,
+      nickname: entry.nickname,
       created_at: entry.createdAt,
     })),
   )
@@ -751,6 +754,7 @@ export const upsertCloudBio = async (entry: CloudBioEntry, userId: string) => {
     scientific_name: entry.scientificName,
     position: entry.position,
     note: entry.note,
+    nickname: entry.nickname,
     created_at: entry.createdAt,
   })
   if (error) throw error

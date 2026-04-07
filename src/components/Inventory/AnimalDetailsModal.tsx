@@ -7,6 +7,7 @@ type BioEntry = {
   scientificName: string
   position: string
   note: string
+  nickname: string
   createdAt: string
 }
 
@@ -145,6 +146,7 @@ export default function AnimalDetailsModal({
             {typeIcon(entry.type)}
           </div>
           <div className="bio-modal-header-text">
+            {entry.nickname && <div className="bio-modal-nickname">"{entry.nickname}"</div>}
             <div className="bio-modal-name">{entry.name}</div>
             <div className="bio-modal-scientific">{entry.scientificName || catalogEntry?.scientificName || 'Sem nome científico'}</div>
             <div className="bio-modal-tags">
@@ -168,6 +170,12 @@ export default function AnimalDetailsModal({
           <section className="bio-modal-section">
             <h4>Ficha pessoal</h4>
             <div className="bio-modal-kv">
+              {entry.nickname && (
+                <div className="bio-modal-kv-row">
+                  <span className="bio-modal-k">Apelido</span>
+                  <span className="bio-modal-v" style={{ fontWeight: 700, color: 'var(--brand)' }}>{entry.nickname}</span>
+                </div>
+              )}
               <div className="bio-modal-kv-row">
                 <span className="bio-modal-k">Entrada</span>
                 <span className="bio-modal-v">{formatDate(entry.createdAt)}</span>
