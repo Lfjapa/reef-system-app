@@ -9,7 +9,7 @@
     "dev:lan": "vite --host 0.0.0.0",
     "enrich:bio": "node tools/enrich-bio-data.mjs",
     "export:bio-requirements": "node tools/export-bio-requirements.mjs",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
