@@ -2,6 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "reef-system-dev",
+      "runtimeExecutable": "npm.cmd",
+      "runtimeArgs": ["run", "dev:lan"],
+      "cwd": "D:\\Aquario marinho\\reef-system-app",
+      "port": 5173
+    },
+    {
       "name": "reef-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],

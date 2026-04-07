@@ -1870,3 +1870,250 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* ===== Reef Flow Dashboard Redesign ===== */
+
+.dashboard-root {
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* ── Hero Card ── */
+.dashboard-hero-card {
+  position: relative;
+  min-height: 130px;
+  background: linear-gradient(135deg, #0a2540 0%, #0b1e3d 60%, #071628 100%);
+  overflow: hidden;
+}
+
+.dashboard-hero-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 80%, rgba(14,165,233,0.15) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 20%, rgba(34,197,94,0.08) 0%, transparent 55%);
+  pointer-events: none;
+}
+
+.dashboard-hero-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 18px 16px;
+  gap: 12px;
+}
+
+.dashboard-hero-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.dashboard-hero-name {
+  margin: 0 0 6px;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.82rem;
+  color: var(--muted-2);
+}
+
+.dashboard-hero-dot {
+  opacity: 0.5;
+}
+
+.dashboard-hero-score {
+  flex-shrink: 0;
+}
+
+/* ── Quick Actions ── */
+.dashboard-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  border-bottom: 1px solid var(--border-2);
+}
+
+.dashboard-quick-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 14px 8px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border-2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.dashboard-quick-btn:last-child {
+  border-right: none;
+}
+
+.dashboard-quick-btn:hover {
+  background: rgba(148, 163, 184, 0.06);
+  color: var(--text);
+}
+
+.dashboard-quick-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.dashboard-quick-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Body (padded content below quick actions) ── */
+.dashboard-body {
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+}
+
+/* ── Parâmetros Atuais ── */
+.dashboard-params-section {
+  display: grid;
+  gap: 10px;
+}
+
+.dashboard-params-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dashboard-section-title {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.dashboard-params-ts {
+  font-size: 0.75rem;
+  color: var(--muted-2);
+  opacity: 0.7;
+}
+
+.dashboard-params-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+/* ── Reef Flow Parameter Card ── */
+.rf-param-card {
+  background: var(--card);
+  border: 1px solid #2b3b5a;
+  border-left: 3px solid #334155;
+  border-radius: 12px;
+  padding: 11px 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.rf-param-card--ideal   { border-left-color: var(--success); }
+.rf-param-card--attention { border-left-color: var(--warning-color); }
+.rf-param-card--critical  { border-left-color: var(--danger); }
+
+.rf-param-card--hero {
+  background: #111c35;
+}
+
+.rf-param-label {
+  font-size: 0.72rem;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rf-param-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.rf-param-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.rf-param-unit {
+  font-size: 0.78rem;
+  color: var(--muted-2);
+  font-weight: 500;
+}
+
+.rf-param-arrow {
+  font-size: 0.9rem;
+  font-weight: 800;
+  margin-left: auto;
+}
+
+.rf-param-arrow--up   { color: var(--success); }
+.rf-param-arrow--down { color: #f97316; }
+.rf-param-arrow--flat { color: var(--muted-2); }
+
+/* ── Trends collapsible ── */
+.dashboard-trends-details {
+  background: transparent;
+}
+
+.dashboard-trends-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 0 10px;
+  user-select: none;
+}
+
+.dashboard-trends-summary::-webkit-details-marker {
+  display: none;
+}
+
+.dashboard-trends-summary::after {
+  content: '▸';
+  font-size: 0.8rem;
+  transition: transform 0.2s;
+}
+
+.dashboard-trends-details[open] .dashboard-trends-summary::after {
+  transform: rotate(90deg);
+}

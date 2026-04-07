@@ -1,5 +1,5 @@
-import { useState, useRef, type ReactNode, type MouseEvent } from 'react'
-import ParameterHealthSummary from './ParameterHealthSummary'
+import { useState, useRef, type MouseEvent } from 'react'
+import HealthScoreCircle from './HealthScoreCircle'
 import type { SmartTip } from '../../hooks/useSmartTips'
 import type { AnimalRiskItem } from '../../hooks/useAnimalsAtRisk'
 
@@ -64,6 +64,12 @@ type ProtocolDueItem = {
 // Primary parameters shown as hero cards
 const HERO_PARAMS = new Set(['kh', 'ca', 'mg', 'temperature', 'salinity', 'ph'])
 
+const arrowSymbol: Record<TrendArrow, string> = {
+  up: '↑',
+  down: '↓',
+  flat: '→',
+}
+
 type Props = {
   latestByParameter: LatestByParameterItem[]
   parameterInsights: Map<string, ParameterInsight>
@@ -83,31 +89,30 @@ type Props = {
   todayProtocolDayIndex: number
   smartTips?: SmartTip[]
   animalsAtRisk?: AnimalRiskItem[]
+  tankInfo: {
+    name: string
+    volumeLiters: number
+    systemType: string
+    tankAgeMonths?: number
+  }
+  onNavigate: (tab: 'parametros' | 'protocolos' | 'inventario' | 'configuracoes') => void
+  tankHealthScore: number
 }
 
-// Clamp a value between 0 and 1 for range bar
-function rangePercent(value: number, min: number, max: number): number {
-  const span = max - min
-  if (span <= 0) return 0.5
-  return Math.max(0, Math.min(1, (value - min) / span))
-}
+type ChartTooltip = { x: number; y: number; label: string } | null
 
-// Compute display range: extend safe zone by 25% on each side for context
-function displayRange(safe: { min: number; max: number }): { dMin: number; dMax: number } {
-  const span = safe.max - safe.min
-  const pad = span * 0.4
-  return { dMin: safe.min - pad, dMax: safe.max + pad }
+function timeAgoLabel(isoString: string): string {
+  const diffMs = Date.now() - new Date(isoString).getTime()
+  const diffH = Math.round(diffMs / 3600000)
+  if (diffH < 1) return 'Há menos de 1h'
+  if (diffH < 24) return `Há ${diffH}h`
+  const diffD = Math.round(diffH / 24)
+  return `Há ${diffD}d`
 }
-
-type ChartTooltip = { x: number; y: number; label: string; value: number; unit: string; date: string } | null
 
 export default function DashboardTab({
   latestByParameter,
   parameterInsights,
-  safeZones,
-  cloudConsumptionRates,
-  formatSigned,
-  arrowSymbol,
   dashboardPeriodDays,
   setDashboardPeriodDays,
   chartPaths,
@@ -120,6 +125,9 @@ export default function DashboardTab({
   todayProtocolDayIndex,
   smartTips = [],
   animalsAtRisk = [],
+  tankInfo,
+  onNavigate,
+  tankHealthScore,
 }: Props) {
   const [tooltip, setTooltip] = useState<ChartTooltip>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -132,22 +140,16 @@ export default function DashboardTab({
       return bTime - aTime
     })
 
-  const heroItems = withData.filter(({ definition }) => HERO_PARAMS.has(definition.key))
-  const secondaryItems = withData.filter(({ definition }) => !HERO_PARAMS.has(definition.key))
-
-  // Critical alerts from smart tips + alert cards
   const criticalTips = smartTips.filter((t) => t.severity === 'critical')
   const warningTips = smartTips.filter((t) => t.severity === 'warning')
   const infoTips = smartTips.filter((t) => t.severity === 'info')
 
-  function renderCard(
-    { definition, latest }: LatestByParameterItem,
-    secondary = false,
-  ) {
+  const mostRecentMeasuredAt =
+    withData.length > 0 && withData[0].latest ? withData[0].latest.measuredAt : null
+
+  function renderCurrentParamCard({ definition, latest }: LatestByParameterItem) {
     const insight = parameterInsights.get(definition.key)
-    const safe = safeZones.get(definition.key) ?? null
-    const cloudRate = cloudConsumptionRates.get(definition.key) ?? null
-    const isOutsideSafe = Boolean(safe && latest && (latest.value < safe.min || latest.value > safe.max))
+    const isHero = HERO_PARAMS.has(definition.key)
     const badgeClass =
       insight?.badge === 'Ideal'
         ? 'ideal'
@@ -156,97 +158,29 @@ export default function DashboardTab({
           : insight?.badge === 'Crítico'
             ? 'critical'
             : 'neutral'
-    const cardStatusClass =
-      insight?.badge === 'Ideal'
-        ? 'card--ideal'
-        : insight?.badge === 'Atenção'
-          ? 'card--attention'
-          : insight?.badge === 'Crítico'
-            ? 'card--critical'
-            : ''
-    const dailyRate = cloudRate ?? insight?.dailyRate ?? null
-    const rateLabel =
-      dailyRate !== null && Number.isFinite(dailyRate)
-        ? `${formatSigned(dailyRate, 3)}${definition.unit ? ` ${definition.unit}/dia` : ' /dia'}`
-        : null
-
-    const autonomyLabel = (() => {
-      if (safe && latest && dailyRate !== null && Number.isFinite(dailyRate) && dailyRate !== 0) {
-        const days =
-          dailyRate > 0 ? (safe.max - latest.value) / dailyRate : (latest.value - safe.min) / Math.abs(dailyRate)
-        if (Number.isFinite(days) && days > 0) {
-          return `Sai da zona em ~${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(days)} dias`
-        }
-      }
-      const projDays = insight?.projectedDaysToCriticalMin ?? insight?.projectedDaysToBound ?? null
-      if (projDays !== null && Number.isFinite(projDays)) {
-        return `Limite em ~${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(projDays)} dias`
-      }
-      return null
-    })()
-
-    // Range bar
-    let rangeBar: ReactNode = null
-    if (safe && latest && Number.isFinite(safe.min) && Number.isFinite(safe.max)) {
-      const { dMin, dMax } = displayRange(safe)
-      const thumbPct = rangePercent(latest.value, dMin, dMax) * 100
-      const safePctLeft = rangePercent(safe.min, dMin, dMax) * 100
-      const safePctWidth = rangePercent(safe.max, dMin, dMax) * 100 - safePctLeft
-      const thumbColor =
-        isOutsideSafe
-          ? 'var(--danger)'
-          : insight?.badge === 'Atenção'
-            ? 'var(--warning-color)'
-            : 'var(--success)'
-      rangeBar = (
-        <div className="param-range-track">
-          <div
-            className="param-range-safe"
-            style={{ left: `${safePctLeft}%`, width: `${safePctWidth}%` }}
-          />
-          <div
-            className="param-range-thumb"
-            style={{ left: `${thumbPct}%`, backgroundColor: thumbColor }}
-          />
-        </div>
-      )
-    }
-
-    const cardClass = `card${cardStatusClass ? ` ${cardStatusClass}` : ''}${secondary ? ' card--secondary' : ''}`
 
     return (
-      <article key={definition.key} className={cardClass}>
-        <span>{definition.label}</span>
-        <strong>
-          {latest ? (
-            <>
-              <span className={`trend-arrow ${insight?.arrow ?? 'flat'}`}>
-                {arrowSymbol[insight?.arrow ?? 'flat']}
-              </span>{' '}
-              {`${latest.value} ${definition.unit}`.trim()}
-            </>
-          ) : (
-            'Sem medição'
+      <article
+        key={definition.key}
+        className={`rf-param-card rf-param-card--${badgeClass}${isHero ? ' rf-param-card--hero' : ''}`}
+      >
+        <span className="rf-param-label">{definition.label}</span>
+        <div className="rf-param-value-row">
+          <strong className="rf-param-value">
+            {latest ? latest.value : '—'}
+          </strong>
+          {definition.unit && latest && (
+            <span className="rf-param-unit">{definition.unit}</span>
           )}
-        </strong>
-        {rangeBar}
-        <small>
-          {latest && insight ? (
-            <>
-              <span className={`status-badge ${badgeClass}`}>{insight.badge}</span>
-              {isOutsideSafe ? (
-                <>
-                  {' '}
-                  <span className="status-badge critical">Fora zona</span>
-                </>
-              ) : null}
-              {rateLabel ? ` · ${rateLabel}` : ''}
-              {autonomyLabel ? ` · ${autonomyLabel}` : ''}
-            </>
-          ) : (
-            'Sem histórico'
+          {insight && (
+            <span className={`rf-param-arrow rf-param-arrow--${insight.arrow}`}>
+              {arrowSymbol[insight.arrow]}
+            </span>
           )}
-        </small>
+        </div>
+        {insight && insight.badge !== 'Sem faixa' && latest && (
+          <span className={`status-badge ${badgeClass}`}>{insight.badge}</span>
+        )}
       </article>
     )
   }
@@ -267,9 +201,6 @@ export default function DashboardTab({
             x: (pt.x / 320) * rect.width + rect.left - rect.left,
             y: pt.y,
             label: lane.label,
-            value: 0,
-            unit: '',
-            date: '',
           }
         }
       }
@@ -277,274 +208,317 @@ export default function DashboardTab({
     setTooltip(best)
   }
 
-  // Y-axis labels: compute min/max from all lane data
   const yLabels: { y: number; text: string }[] = []
   if (chartPaths.length > 0) {
-    // 5 evenly spaced labels: 0%, 25%, 50%, 75%, 100% of chart height (120)
     for (const pct of [0, 25, 50, 75, 100]) {
       yLabels.push({ y: (pct / 100) * 120, text: `${100 - pct}%` })
     }
   }
 
+  const quickActions = [
+    { label: 'Testar', icon: '🧪', tab: 'parametros' as const },
+    { label: 'TPA', icon: '💧', tab: 'protocolos' as const },
+    { label: 'Animal', icon: '🐟', tab: 'inventario' as const },
+    { label: 'Ajustes', icon: '⚙️', tab: 'configuracoes' as const },
+  ]
+
   return (
-    <section className="panel">
-      <h2>Status rápido</h2>
+    <section className="dashboard-root">
 
-      {/* ── Zone 1: Critical alert strip ── */}
-      {(criticalTips.length > 0 || dashboardAlertCards.length > 0 || animalsAtRisk.length > 0) && (
-        <div className="dashboard-alerts-strip">
-          {criticalTips.map((tip) => (
-            <div key={tip.id} className="dashboard-alert-banner">
-              <span style={{ fontWeight: 800 }}>!</span>
-              <span>{tip.message}</span>
+      {/* ── Zone 1: Aquarium Hero Card ── */}
+      <div className="dashboard-hero-card">
+        <div className="dashboard-hero-bg" aria-hidden="true" />
+        <div className="dashboard-hero-content">
+          <div className="dashboard-hero-info">
+            <h2 className="dashboard-hero-name">{tankInfo.name}</h2>
+            <div className="dashboard-hero-meta">
+              <span>{tankInfo.volumeLiters}L</span>
+              <span className="dashboard-hero-dot">·</span>
+              <span>{tankInfo.systemType}</span>
+              {tankInfo.tankAgeMonths !== undefined && (
+                <>
+                  <span className="dashboard-hero-dot">·</span>
+                  <span>{tankInfo.tankAgeMonths} meses</span>
+                </>
+              )}
             </div>
-          ))}
-          {dashboardAlertCards.map((text) => (
-            <div key={text} className="dashboard-alert-banner dashboard-alert-banner--warning">
-              <span>⚠</span>
-              <span>{text}</span>
+          </div>
+          <div className="dashboard-hero-score">
+            <HealthScoreCircle score={tankHealthScore} size={110} />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Zone 2: Quick Action Buttons ── */}
+      <div className="dashboard-quick-actions">
+        {quickActions.map(({ label, icon, tab }) => (
+          <button
+            key={tab}
+            className="dashboard-quick-btn"
+            onClick={() => onNavigate(tab)}
+            type="button"
+          >
+            <span className="dashboard-quick-icon">{icon}</span>
+            <span className="dashboard-quick-label">{label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Body (padded) ── */}
+      <div className="dashboard-body">
+
+        {/* ── Alert Strip ── */}
+        {(criticalTips.length > 0 || dashboardAlertCards.length > 0 || animalsAtRisk.length > 0) && (
+          <div className="dashboard-alerts-strip">
+            {criticalTips.map((tip) => (
+              <div key={tip.id} className="dashboard-alert-banner">
+                <span style={{ fontWeight: 800 }}>!</span>
+                <span>{tip.message}</span>
+              </div>
+            ))}
+            {dashboardAlertCards.map((text) => (
+              <div key={text} className="dashboard-alert-banner dashboard-alert-banner--warning">
+                <span>⚠</span>
+                <span>{text}</span>
+              </div>
+            ))}
+            {animalsAtRisk.map((animal) => (
+              <div key={animal.entryId} className="dashboard-alert-banner">
+                <span>⚠</span>
+                <span>
+                  <strong>{animal.name}</strong>
+                  {': '}
+                  {animal.violations.map((v) => v.label).join(', ')} fora do ideal
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Parâmetros Atuais ── */}
+        <div className="dashboard-params-section">
+          <div className="dashboard-params-header">
+            <h3 className="dashboard-section-title">Parâmetros Atuais</h3>
+            {mostRecentMeasuredAt && (
+              <span className="dashboard-params-ts">{timeAgoLabel(mostRecentMeasuredAt)}</span>
+            )}
+          </div>
+          {withData.length > 0 ? (
+            <div className="dashboard-params-grid">
+              {withData.map((item) => renderCurrentParamCard(item))}
             </div>
-          ))}
-          {animalsAtRisk.map((animal) => (
-            <div key={animal.entryId} className="dashboard-alert-banner">
-              <span>⚠</span>
-              <span>
-                <strong>{animal.name}</strong>
-                {': '}
-                {animal.violations.map((v) => v.label).join(', ')} fora do ideal
-              </span>
-            </div>
-          ))}
+          ) : (
+            <p className="intelligence-empty">Nenhuma medição registrada ainda.</p>
+          )}
         </div>
-      )}
 
-      {/* ── Zone 2: Hero parameters ── */}
-      {heroItems.length > 0 && (
-        <div className="dashboard-hero-grid">
-          {heroItems.map((item) => renderCard(item, false))}
-        </div>
-      )}
-
-      {/* ── Zone 3: Secondary parameters ── */}
-      {secondaryItems.length > 0 && (
-        <div className="dashboard-secondary-grid">
-          {secondaryItems.map((item) => renderCard(item, true))}
-        </div>
-      )}
-
-      {/* Show all params if none fall into hero category */}
-      {heroItems.length === 0 && withData.length > 0 && (
-        <div className="cards">
-          {withData.map((item) => renderCard(item, false))}
-        </div>
-      )}
-
-      <ParameterHealthSummary parameterInsights={parameterInsights} />
-
-      {/* ── Zone 4: Chart + today's protocols side by side ── */}
-      <div className="dashboard-chart-row">
-        <div className="chart-box" style={{ marginTop: 0 }}>
-          <div className="chart-head">
-            <h3>Tendências</h3>
+        {/* ── Tendências (colapsável) ── */}
+        <details className="dashboard-trends-details">
+          <summary className="dashboard-trends-summary">
+            <span>Tendências</span>
             <select
               value={dashboardPeriodDays}
               onChange={(event) => setDashboardPeriodDays(Number(event.target.value) as 7 | 30 | 90 | 365)}
+              onClick={(e) => e.stopPropagation()}
             >
               <option value={7}>7 dias</option>
               <option value={30}>30 dias</option>
               <option value={90}>90 dias</option>
               <option value={365}>1 ano</option>
             </select>
-          </div>
-          <div className="chart-frame">
-            <svg
-              ref={svgRef}
-              viewBox="0 0 340 130"
-              className="chart"
-              onMouseMove={handleSvgMouseMove}
-              onMouseLeave={() => setTooltip(null)}
-              style={{ cursor: 'crosshair' }}
-            >
-              {/* Y-axis grid lines + labels */}
-              {yLabels.map(({ y, text }) => (
-                <g key={y}>
-                  <line x1={28} y1={y + 5} x2={340} y2={y + 5} stroke="rgba(148,163,184,0.08)" />
-                  <text x={24} y={y + 9} fill="#64748b" fontSize={7} textAnchor="end">
-                    {text}
-                  </text>
+          </summary>
+
+          <div className="chart-box" style={{ marginTop: 0 }}>
+            <div className="chart-frame">
+              <svg
+                ref={svgRef}
+                viewBox="0 0 340 130"
+                className="chart"
+                onMouseMove={handleSvgMouseMove}
+                onMouseLeave={() => setTooltip(null)}
+                style={{ cursor: 'crosshair' }}
+              >
+                {yLabels.map(({ y, text }) => (
+                  <g key={y}>
+                    <line x1={28} y1={y + 5} x2={340} y2={y + 5} stroke="rgba(148,163,184,0.08)" />
+                    <text x={24} y={y + 9} fill="#64748b" fontSize={7} textAnchor="end">
+                      {text}
+                    </text>
+                  </g>
+                ))}
+                <g transform="translate(28, 5)">
+                  {chartPaths.map((item) => (
+                    <g key={item.key}>
+                      {item.laneHeight >= 10 && (
+                        <text x={0} y={item.laneTop - 4} fill="#94a3b8" fontSize={8}>
+                          {item.label}
+                        </text>
+                      )}
+                      {item.laneHeight >= 8 && (
+                        <line
+                          x1={0}
+                          y1={item.laneTop + item.laneHeight}
+                          x2={312}
+                          y2={item.laneTop + item.laneHeight}
+                          stroke="rgba(148, 163, 184, 0.10)"
+                        />
+                      )}
+                      {item.safeBand && (
+                        <rect
+                          x={0}
+                          y={item.safeBand.y}
+                          width={312}
+                          height={item.safeBand.height}
+                          fill="rgba(34, 197, 94, 0.10)"
+                        />
+                      )}
+                      {item.path && <path d={item.path} stroke={item.color} />}
+                      {item.points.map((point, index) => (
+                        <circle
+                          key={`${item.key}-${index}`}
+                          cx={point.x}
+                          cy={point.y}
+                          r={2.4}
+                          fill={item.color}
+                        />
+                      ))}
+                    </g>
+                  ))}
                 </g>
-              ))}
-              {/* Data lanes shifted right by 28px for Y-axis space */}
-              <g transform="translate(28, 5)">
-                {chartPaths.map((item) => (
-                  <g key={item.key}>
-                    {item.laneHeight >= 10 && (
-                      <text x={0} y={item.laneTop - 4} fill="#94a3b8" fontSize={8}>
-                        {item.label}
-                      </text>
-                    )}
-                    {item.laneHeight >= 8 && (
-                      <line
-                        x1={0}
-                        y1={item.laneTop + item.laneHeight}
-                        x2={312}
-                        y2={item.laneTop + item.laneHeight}
-                        stroke="rgba(148, 163, 184, 0.10)"
-                      />
-                    )}
-                    {item.safeBand && (
+                {tooltip && (
+                  <line
+                    x1={tooltip.x + 28}
+                    y1={5}
+                    x2={tooltip.x + 28}
+                    y2={125}
+                    stroke="rgba(148,163,184,0.4)"
+                    strokeDasharray="3,2"
+                  />
+                )}
+              </svg>
+              {tooltip && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    background: 'var(--panel)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    padding: '6px 10px',
+                    pointerEvents: 'none',
+                    fontSize: '0.8rem',
+                    color: 'var(--muted)',
+                  }}
+                >
+                  {tooltip.label}
+                </div>
+              )}
+            </div>
+            <div className="chart-mobile-list">
+              {chartPaths.map((item) => (
+                <div key={item.key} className="chart-mobile-item">
+                  <div className="chart-mobile-head">
+                    <span className="chart-mobile-dot" style={{ backgroundColor: item.color }}></span>
+                    <strong>{item.label}</strong>
+                  </div>
+                  <svg viewBox={`0 0 320 ${item.laneHeight}`} className="chart-mobile-spark">
+                    {item.safeBandInLane && (
                       <rect
                         x={0}
-                        y={item.safeBand.y}
-                        width={312}
-                        height={item.safeBand.height}
+                        y={item.safeBandInLane.y}
+                        width={320}
+                        height={item.safeBandInLane.height}
                         fill="rgba(34, 197, 94, 0.10)"
                       />
                     )}
-                    {item.path && <path d={item.path} stroke={item.color} />}
-                    {item.points.map((point, index) => (
-                      <circle
-                        key={`${item.key}-${index}`}
-                        cx={point.x}
-                        cy={point.y}
-                        r={2.4}
-                        fill={item.color}
-                      />
+                    {item.lanePath && <path d={item.lanePath} stroke={item.color} />}
+                    {item.lanePoints.map((point, index) => (
+                      <circle key={`${item.key}-m-${index}`} cx={point.x} cy={point.y} r={2.2} fill={item.color} />
                     ))}
-                  </g>
+                  </svg>
+                </div>
+              ))}
+              {chartPaths.length === 0 && <span>Sem registros no período.</span>}
+            </div>
+            <div className="legend">
+              {chartPaths.map((item) => (
+                <span key={item.key} className="legend-item">
+                  <i style={{ backgroundColor: item.color }}></i>
+                  {item.label}
+                </span>
+              ))}
+              {chartPaths.length === 0 && <span>Sem registros no período.</span>}
+            </div>
+            {chartPaths.length > 0 && (
+              <div className="chart-note">Eixo Y normalizado 0–100% por parâmetro.</div>
+            )}
+          </div>
+        </details>
+
+        {/* ── Chart + Today's Protocols ── */}
+        <div className="dashboard-chart-row">
+          <div className="dashboard-protocols-panel">
+            <h4>Hoje ({dayLabel})</h4>
+            {protocolsDueToday.length === 0 ? (
+              <p className="intelligence-empty">Sem rotinas pendentes.</p>
+            ) : (
+              <div className="today-protocols">
+                {protocolsDueToday.map((item) => (
+                  <div key={item.definition.key} className="today-protocol-item">
+                    <div className="today-protocol-main">
+                      <strong>{item.definition.label}</strong>
+                      <span className="today-protocol-meta">
+                        {item.doseLabel}
+                        {item.latest ? ` · ${formatDate(item.latest.checkedAt)}` : ''}
+                      </span>
+                    </div>
+                    <button
+                      className="week-check"
+                      onClick={() => onToggleProtocolCheck(item.definition.key, todayProtocolDayIndex)}
+                    >
+                      Pendente
+                    </button>
+                  </div>
                 ))}
-              </g>
-              {/* Tooltip crosshair */}
-              {tooltip && (
-                <line
-                  x1={tooltip.x + 28}
-                  y1={5}
-                  x2={tooltip.x + 28}
-                  y2={125}
-                  stroke="rgba(148,163,184,0.4)"
-                  strokeDasharray="3,2"
-                />
-              )}
-            </svg>
-            {tooltip && (
-              <div
-                style={{
-                  position: 'absolute',
-                  background: 'var(--panel)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  padding: '6px 10px',
-                  pointerEvents: 'none',
-                  fontSize: '0.8rem',
-                  color: 'var(--muted)',
-                }}
-              >
-                {tooltip.label}
               </div>
             )}
           </div>
-          <div className="chart-mobile-list">
-            {chartPaths.map((item) => (
-              <div key={item.key} className="chart-mobile-item">
-                <div className="chart-mobile-head">
-                  <span className="chart-mobile-dot" style={{ backgroundColor: item.color }}></span>
-                  <strong>{item.label}</strong>
-                </div>
-                <svg viewBox={`0 0 320 ${item.laneHeight}`} className="chart-mobile-spark">
-                  {item.safeBandInLane && (
-                    <rect
-                      x={0}
-                      y={item.safeBandInLane.y}
-                      width={320}
-                      height={item.safeBandInLane.height}
-                      fill="rgba(34, 197, 94, 0.10)"
-                    />
-                  )}
-                  {item.lanePath && <path d={item.lanePath} stroke={item.color} />}
-                  {item.lanePoints.map((point, index) => (
-                    <circle key={`${item.key}-m-${index}`} cx={point.x} cy={point.y} r={2.2} fill={item.color} />
+        </div>
+
+        {/* ── Warning/info tips + insights ── */}
+        {(warningTips.length > 0 || infoTips.length > 0 || dashboardInsightCards.length > 0) && (
+          <div className="smart-tips">
+            {(warningTips.length > 0 || infoTips.length > 0) && (
+              <>
+                <h3 className="smart-tips-title">Alertas Inteligentes</h3>
+                <div className="smart-tips-list">
+                  {warningTips.map((tip) => (
+                    <div key={tip.id} className="smart-tip smart-tip--warning">
+                      <span className="smart-tip-icon">⚠</span>
+                      <span className="smart-tip-msg">{tip.message}</span>
+                    </div>
                   ))}
-                </svg>
-              </div>
-            ))}
-            {chartPaths.length === 0 && <span>Sem registros no período.</span>}
-          </div>
-          <div className="legend">
-            {chartPaths.map((item) => (
-              <span key={item.key} className="legend-item">
-                <i style={{ backgroundColor: item.color }}></i>
-                {item.label}
-              </span>
-            ))}
-            {chartPaths.length === 0 && <span>Sem registros no período.</span>}
-          </div>
-          {chartPaths.length > 0 && (
-            <div className="chart-note">Eixo Y normalizado 0–100% por parâmetro.</div>
-          )}
-        </div>
-
-        {/* Today's protocols panel */}
-        <div className="dashboard-protocols-panel">
-          <h4>Hoje ({dayLabel})</h4>
-          {protocolsDueToday.length === 0 ? (
-            <p className="intelligence-empty">Sem rotinas pendentes.</p>
-          ) : (
-            <div className="today-protocols">
-              {protocolsDueToday.map((item) => (
-                <div key={item.definition.key} className="today-protocol-item">
-                  <div className="today-protocol-main">
-                    <strong>{item.definition.label}</strong>
-                    <span className="today-protocol-meta">
-                      {item.doseLabel}
-                      {item.latest ? ` · ${formatDate(item.latest.checkedAt)}` : ''}
-                    </span>
-                  </div>
-                  <button
-                    className="week-check"
-                    onClick={() => onToggleProtocolCheck(item.definition.key, todayProtocolDayIndex)}
-                  >
-                    Pendente
-                  </button>
+                  {infoTips.map((tip) => (
+                    <div key={tip.id} className="smart-tip smart-tip--info">
+                      <span className="smart-tip-icon">i</span>
+                      <span className="smart-tip-msg">{tip.message}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              </>
+            )}
+            {dashboardInsightCards.length > 0 && (
+              <div className="insights" style={{ marginTop: 8 }}>
+                {dashboardInsightCards.map((text) => (
+                  <div key={text} className="insight-card">
+                    {text}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
-
-      {/* ── Zone 5: Warning/info tips + insights ── */}
-      {(warningTips.length > 0 || infoTips.length > 0 || dashboardInsightCards.length > 0) && (
-        <div className="smart-tips" style={{ marginTop: 16 }}>
-          {(warningTips.length > 0 || infoTips.length > 0) && (
-            <>
-              <h3 className="smart-tips-title">Alertas Inteligentes</h3>
-              <div className="smart-tips-list">
-                {warningTips.map((tip) => (
-                  <div key={tip.id} className="smart-tip smart-tip--warning">
-                    <span className="smart-tip-icon">⚠</span>
-                    <span className="smart-tip-msg">{tip.message}</span>
-                  </div>
-                ))}
-                {infoTips.map((tip) => (
-                  <div key={tip.id} className="smart-tip smart-tip--info">
-                    <span className="smart-tip-icon">i</span>
-                    <span className="smart-tip-msg">{tip.message}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          {dashboardInsightCards.length > 0 && (
-            <div className="insights" style={{ marginTop: 8 }}>
-              {dashboardInsightCards.map((text) => (
-                <div key={text} className="insight-card">
-                  {text}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </section>
   )
 }

@@ -5,6 +5,7 @@ import Header from './components/shared/Header'
 import ParameterAlertModal from './components/shared/ParameterAlertModal'
 import SettingsModal from './components/shared/SettingsModal'
 import DashboardTab from './components/Dashboard/DashboardTab'
+import { calcTankHealthScore } from './lib/tankHealthScore'
 import ParametersTab from './components/Parameters/ParametersTab'
 import ProtocolsTab from './components/Protocols/ProtocolsTab'
 import LightingTab from './components/Lighting/LightingTab'
@@ -800,6 +801,11 @@ function App() {
 
   const animalsAtRisk = useAnimalsAtRisk(bioEntries, bioDeepDivePreviewById, latestValuesMap)
 
+  const tankHealthScore = useMemo(
+    () => calcTankHealthScore({ parameterInsights, animalsAtRisk, smartTips }),
+    [parameterInsights, animalsAtRisk, smartTips],
+  )
+
   const compatibilityWarnings = useMemo(() => {
     if (!bioEditingId && (bioName.trim() || bioScientificName.trim())) {
       const result = checkCompatibility(
@@ -1267,6 +1273,13 @@ function App() {
           todayProtocolDayIndex={todayProtocolDayIndex}
           smartTips={smartTips}
           animalsAtRisk={animalsAtRisk}
+          tankInfo={{
+            name: uiSettings.title,
+            volumeLiters: tankVolumeLiters,
+            systemType: detectSystemType(bioEntries),
+          }}
+          onNavigate={(tab) => setActiveTab(tab)}
+          tankHealthScore={tankHealthScore}
         />
       )}
 
