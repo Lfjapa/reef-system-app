@@ -1772,21 +1772,18 @@
 /* ===== Lighting 24h timeline ===== */
 .lighting-timeline {
   width: 100%;
-  background: #071022;
-  border-radius: 10px;
+  height: auto;
+  min-height: 140px;
   display: block;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  overflow: visible;
 }
 .lighting-timeline-wrap {
   position: relative;
-}
-.lighting-timeline-labels {
-  display: flex;
-  justify-content: space-between;
-  padding: 0 2px;
+  background: #071022;
+  border-radius: 10px;
+  padding: 8px;
   margin-bottom: 4px;
-  color: var(--muted-2);
-  font-size: 0.7rem;
 }
 .lighting-timeline-legend {
   display: flex;
