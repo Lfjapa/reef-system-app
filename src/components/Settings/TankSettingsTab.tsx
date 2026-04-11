@@ -20,6 +20,11 @@ type AquarioInfo = {
   rockKg: number
 }
 
+type BottleSetting = {
+  dailyDoseMl: number | null
+  bottleMlRemaining: number | null
+}
+
 type Props = {
   parameterDefinitions: ParameterDefinition[]
   safeZones: Map<ParameterKey, { min: number; max: number }>
@@ -37,6 +42,9 @@ type Props = {
   totalSystemLiters: number
   systemType: string
   onChangeAquarioInfo: (next: AquarioInfo) => void
+  // Controle de frascos de reagente
+  bottleSettings: Map<ParameterKey, BottleSetting>
+  onChangeBottleSetting: (parameter: ParameterKey, next: BottleSetting) => void
 }
 
 const stepForParameter = (parameter: ParameterKey) => {
@@ -69,6 +77,8 @@ export default function TankSettingsTab({
   totalSystemLiters,
   systemType,
   onChangeAquarioInfo,
+  bottleSettings,
+  onChangeBottleSetting,
 }: Props) {
   const rockDisplacementLiters = Math.round(rockKg * 0.5)
 
@@ -314,6 +324,71 @@ export default function TankSettingsTab({
         <button type="button" className="tank-settings-save-btn" onClick={onSave} disabled={isSaving}>
           {isSaving ? 'Salvando...' : 'Salvar minhas regras'}
         </button>
+      </div>
+
+      {/* ── Controle de frascos de reagente ── */}
+      <div className="bottle-settings-section">
+        <h3 className="aquario-info-title">Frascos de reagente</h3>
+        <p className="helper">
+          Informe a dosagem diária e o volume restante de cada reagente para ver no dashboard quantos dias faltam para o frasco acabar.
+        </p>
+        <div className="bottle-settings-grid">
+          {parameterDefinitions.map((definition) => {
+            const bottle = bottleSettings.get(definition.key) ?? { dailyDoseMl: null, bottleMlRemaining: null }
+            const daysRemaining =
+              bottle.dailyDoseMl && bottle.bottleMlRemaining && bottle.dailyDoseMl > 0
+                ? Math.floor(bottle.bottleMlRemaining / bottle.dailyDoseMl)
+                : null
+            return (
+              <article key={definition.key} className="bottle-setting-card">
+                <strong className="bottle-setting-label">{definition.label}</strong>
+                <div className="bottle-setting-fields">
+                  <label className="bottle-setting-field">
+                    <span>ml/dia</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.5}
+                      value={bottle.dailyDoseMl ?? ''}
+                      placeholder="ex: 10"
+                      className="bottle-input"
+                      onChange={(e) => {
+                        const v = e.target.value.trim()
+                        onChangeBottleSetting(definition.key, {
+                          ...bottle,
+                          dailyDoseMl: v ? Number(v) : null,
+                        })
+                      }}
+                    />
+                  </label>
+                  <label className="bottle-setting-field">
+                    <span>ml restantes</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={10}
+                      value={bottle.bottleMlRemaining ?? ''}
+                      placeholder="ex: 500"
+                      className="bottle-input"
+                      onChange={(e) => {
+                        const v = e.target.value.trim()
+                        onChangeBottleSetting(definition.key, {
+                          ...bottle,
+                          bottleMlRemaining: v ? Number(v) : null,
+                        })
+                      }}
+                    />
+                  </label>
+                </div>
+                {daysRemaining !== null && (
+                  <div className={`bottle-days-preview${daysRemaining <= 3 ? ' bottle-days-preview--alert' : daysRemaining <= 7 ? ' bottle-days-preview--warning' : ''}`}>
+                    ~{daysRemaining} dias restantes
+                  </div>
+                )}
+              </article>
+            )
+          })}
+        </div>
       </div>
     </section>
   )

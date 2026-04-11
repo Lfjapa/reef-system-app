@@ -2,20 +2,9 @@ import { useState } from 'react'
 import CompatibilityCheckPanel from './CompatibilityCheckPanel'
 import type { CompatibilityWarning } from '../../lib/compatibilityEngine'
 import type { AnimalRiskItem } from '../../hooks/useAnimalsAtRisk'
+import type { BioEntry, BioType } from '../../types'
 
-type BioType = 'peixe' | 'coral' | 'invertebrado'
 type FaunaSubmenu = BioType
-
-type BioEntry = {
-  id: string
-  type: BioType
-  name: string
-  scientificName: string
-  position: string
-  note: string
-  nickname: string
-  createdAt: string
-}
 
 type BioDeepDivePreview = {
   reefCompatible: string | null
@@ -197,14 +186,13 @@ export default function InventoryTab({
             {/* Nome + Apelido */}
             <div className="inv-field-row">
               <label className="inv-field">
-                <span className="inv-field-label">Nome *</span>
+                <span className="inv-field-label">Nome</span>
                 <input
-                  required
                   type="text"
                   value={bioName}
                   onChange={(e) => setBioName(e.target.value)}
                   onBlur={fillBioByName}
-                  placeholder="Nome comum ou científico"
+                  placeholder="Nome comum (opcional se tiver apelido)"
                   list="bio-name-suggestions"
                   className="inv-input"
                 />

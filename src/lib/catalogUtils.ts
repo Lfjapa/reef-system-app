@@ -28,7 +28,19 @@ export const scoreTextMatch = (query: string, text: string) => {
   const tokens = query.split(' ').filter(Boolean)
   if (!tokens.length) return 0
   if (tokens.every((token) => text.includes(token))) return 60
-  return 0
+  // Partial: best single long-token match, capped at 55 (below catalog threshold of 60)
+  const longTokens = tokens.filter((t) => t.length >= 3)
+  if (!longTokens.length) return 0
+  let bestPartial = 0
+  for (const token of longTokens) {
+    let s = 0
+    if (text === token) s = 55
+    else if (text.startsWith(token)) s = 50
+    else if (text.includes(` ${token}`)) s = 45
+    else if (text.includes(token)) s = 40
+    if (s > bestPartial) bestPartial = s
+  }
+  return bestPartial
 }
 
 export const findBestCatalogMatch = (name: string, entries: BioCatalogEntry[]) => {

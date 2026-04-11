@@ -1,15 +1,4 @@
-type BioType = 'peixe' | 'coral' | 'invertebrado'
-
-type BioEntry = {
-  id: string
-  type: BioType
-  name: string
-  scientificName: string
-  position: string
-  note: string
-  nickname: string
-  createdAt: string
-}
+import type { BioEntry, BioType } from '../../types'
 
 type BioCatalogEntry = {
   aliases: string[]

@@ -12,6 +12,8 @@ import LightingTab from './components/Lighting/LightingTab'
 import InventoryTab from './components/Inventory/InventoryTab'
 import AnimalDetailsModal from './components/Inventory/AnimalDetailsModal'
 import TankSettingsTab from './components/Settings/TankSettingsTab'
+import DiaryTab from './components/Diary/DiaryTab'
+import { useEventLog } from './hooks/useEventLog'
 import { parameterDefinitionsData } from './data/defaults'
 import { useCloudWriteQueue } from './hooks/useCloudWriteQueue'
 import { useSmartTips } from './hooks/useSmartTips'
@@ -21,331 +23,31 @@ import { useBioEntries } from './hooks/useBioEntries'
 import { useParameterEntries } from './hooks/useParameterEntries'
 import { useProtocols } from './hooks/useProtocols'
 import { useAppSync } from './hooks/useAppSync'
+import { useLightingModal } from './hooks/useLightingModal'
+import { useParameterInsights, arrowSymbol } from './hooks/useParameterInsights'
 import DosingCalculatorModal from './components/shared/DosingCalculatorModal'
 import { checkCompatibility } from './lib/compatibilityEngine'
 import { findBestCatalogMatch } from './lib/catalogUtils'
 import { isSupabaseEnabled } from './lib/supabase'
 import {
   fetchCloudWaterChanges,
-  upsertCloudLightingPhase,
   upsertCloudUserSettings,
   upsertCloudWaterChange,
 } from './lib/cloudStore'
 import { getSession, onAuthStateChange } from './lib/auth'
-
-type ParameterKey = string
-
-type ParameterEntry = {
-  id: string
-  parameter: ParameterKey
-  value: number
-  measuredAt: string
-  note: string
-}
-
-type ParameterDefinition = {
-  key: ParameterKey
-  label: string
-  unit: string
-  min?: number
-  max?: number
-}
-
-type SyncState = 'local' | 'syncing' | 'online' | 'error'
-
-type UiSettings = {
-  title: string
-  subtitle: string
-  subtitleEnabled: boolean
-}
-
-type LightingPhase = {
-  id: string
-  name: string
-  time: string
-  uv: number
-  white: number
-  blue: number
-}
+import { formatSyncError, formatDate, formatDays, formatSigned, getSeriesColor, DAY_LABELS, timeToMinutes } from './lib/formatters'
+import { buildMonotonePath } from './lib/chartUtils'
+import type { ChartPoint } from './lib/chartUtils'
+import type {
+  ParameterKey,
+  ParameterEntry,
+  ParameterDefinition,
+  SyncState,
+  UiSettings,
+  LightingPhase,
+} from './types'
 
 const parameterDefinitions: ParameterDefinition[] = parameterDefinitionsData
-
-const parameterColors: Record<string, string> = {
-  kh: '#38bdf8',
-  calcio: '#22d3ee',
-  magnesio: '#14b8a6',
-  salinidade: '#10b981',
-  temperatura: '#f59e0b',
-  ph: '#ef4444',
-  amonia: '#e879f9',
-  nitrito: '#f97316',
-  nitrato: '#84cc16',
-  fosfato: '#a78bfa',
-  silicato: '#fb7185',
-  iodo: '#facc15',
-}
-
-const hashToHue = (value: string) => {
-  let hash = 0
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 31 + value.charCodeAt(i)) | 0
-  }
-  return Math.abs(hash) % 360
-}
-
-const getSeriesColor = (key: string) => {
-  const known = parameterColors[key]
-  if (known) return known
-  const hue = hashToHue(key)
-  return `hsl(${hue} 70% 60%)`
-}
-
-const formatSyncError = (error: unknown) => {
-  if (error instanceof Error) return error.message || 'Erro desconhecido'
-  if (!error || typeof error !== 'object') return 'Erro desconhecido'
-  const candidate = error as Record<string, unknown>
-  const message = typeof candidate.message === 'string' ? candidate.message : ''
-  const code = typeof candidate.code === 'string' ? candidate.code : ''
-  const details = typeof candidate.details === 'string' ? candidate.details : ''
-  const hint = typeof candidate.hint === 'string' ? candidate.hint : ''
-  const status = typeof candidate.status === 'number' ? String(candidate.status) : ''
-  const pieces = [message, code && `code=${code}`, status && `status=${status}`, details, hint].filter(Boolean)
-  return pieces.join(' • ') || 'Erro desconhecido'
-}
-
-const formatDate = (value: string) =>
-  new Intl.DateTimeFormat('pt-BR', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  }).format(new Date(value))
-
-const dayLabels = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']
-
-const formatDays = (days: number[]) => {
-  const labels = days
-    .slice()
-    .sort((a, b) => a - b)
-    .map((day) => dayLabels[(day + 6) % 7])
-  return labels.join(', ')
-}
-
-const timeToMinutes = (time: string) => {
-  const [h, m] = time.split(':').map((part) => Number(part))
-  return h * 60 + m
-}
-
-const getStatus = (value: number, min?: number, max?: number) => {
-  if (min === undefined || max === undefined) return 'Sem faixa'
-  if (value < min) return 'Baixo'
-  if (value > max) return 'Alto'
-  return 'Ideal'
-}
-
-type TrendArrow = 'up' | 'down' | 'flat'
-type InsightBadge = 'Ideal' | 'Atenção' | 'Crítico' | 'Sem faixa'
-
-type ParameterInsight = {
-  latest: ParameterEntry | null
-  previous: ParameterEntry | null
-  delta: number | null
-  daysBetween: number | null
-  dailyRate: number | null
-  arrow: TrendArrow
-  badge: InsightBadge
-  projectedDaysToBound: number | null
-  projectedBound: 'min' | 'max' | null
-  projectedDaysToCriticalMin: number | null
-  criticalMin: number | null
-}
-
-const TREND_WINDOW_DAYS = 7
-const MIN_RATE_INTERVAL_DAYS = 0.25
-
-const aggressiveDailyRateByParameter: Partial<Record<ParameterKey, number>> = {
-  kh: 0.5,
-}
-
-const criticalLimitsByParameter: Partial<Record<ParameterKey, { min?: number; max?: number }>> = {
-  kh: { min: 6.5 },
-  ph: { min: 7.8, max: 8.5 },
-}
-
-const arrowSymbol: Record<TrendArrow, string> = {
-  up: '↑',
-  down: '↓',
-  flat: '→',
-}
-
-const formatSigned = (value: number, maximumFractionDigits: number) => {
-  const sign = value > 0 ? '+' : value < 0 ? '−' : ''
-  const abs = Math.abs(value)
-  const formatted = new Intl.NumberFormat('pt-BR', { maximumFractionDigits }).format(abs)
-  return `${sign}${formatted}`
-}
-
-const computeParameterInsight = (
-  allEntries: ParameterEntry[],
-  definition: ParameterDefinition,
-  safeZones: Map<ParameterKey, { min: number; max: number }>,
-): ParameterInsight => {
-  const items = allEntries
-    .filter((entry) => entry.parameter === definition.key)
-    .slice()
-    .sort((a, b) => new Date(a.measuredAt).getTime() - new Date(b.measuredAt).getTime())
-
-  const latest = items.length > 0 ? items[items.length - 1] : null
-  const previous = items.length > 1 ? items[items.length - 2] : null
-  const safe = safeZones.get(definition.key) ?? null
-  const min = safe ? safe.min : definition.min
-  const max = safe ? safe.max : definition.max
-
-  let delta: number | null = null
-  let daysBetween: number | null = null
-  let dailyRate: number | null = null
-
-  if (latest && previous) {
-    delta = latest.value - previous.value
-    const diffMs = new Date(latest.measuredAt).getTime() - new Date(previous.measuredAt).getTime()
-    const diffDays = diffMs / 86400000
-    if (diffDays > 0) {
-      daysBetween = diffDays
-      if (diffDays >= MIN_RATE_INTERVAL_DAYS) dailyRate = delta / diffDays
-    }
-  }
-
-  const arrow: TrendArrow =
-    delta === null || Math.abs(delta) < 1e-12 ? 'flat' : delta > 0 ? 'up' : 'down'
-
-  const status = latest ? getStatus(latest.value, min, max) : 'Sem faixa'
-  let badge: InsightBadge =
-    status === 'Sem faixa' ? 'Sem faixa' : status === 'Ideal' ? 'Ideal' : 'Crítico'
-
-  let projectedDaysToBound: number | null = null
-  let projectedBound: 'min' | 'max' | null = null
-
-  if (latest && dailyRate !== null && min !== undefined && max !== undefined && status === 'Ideal') {
-    if (dailyRate < 0) {
-      const remaining = latest.value - min
-      if (remaining > 0) {
-        projectedDaysToBound = remaining / Math.abs(dailyRate)
-        projectedBound = 'min'
-      }
-    } else if (dailyRate > 0) {
-      const remaining = max - latest.value
-      if (remaining > 0) {
-        projectedDaysToBound = remaining / dailyRate
-        projectedBound = 'max'
-      }
-    }
-  }
-
-  const aggressiveThreshold = aggressiveDailyRateByParameter[definition.key]
-  if (badge === 'Ideal' && dailyRate !== null && aggressiveThreshold !== undefined) {
-    if (Math.abs(dailyRate) >= aggressiveThreshold) {
-      badge = 'Atenção'
-    }
-  }
-
-  if (
-    badge === 'Ideal' &&
-    projectedDaysToBound !== null &&
-    Number.isFinite(projectedDaysToBound) &&
-    projectedDaysToBound <= TREND_WINDOW_DAYS
-  ) {
-    badge = 'Atenção'
-  }
-
-  const criticalMin = criticalLimitsByParameter[definition.key]?.min ?? null
-  let projectedDaysToCriticalMin: number | null = null
-
-  if (latest && dailyRate !== null && criticalMin !== null && dailyRate < 0) {
-    const remaining = latest.value - criticalMin
-    if (remaining > 0) projectedDaysToCriticalMin = remaining / Math.abs(dailyRate)
-  }
-
-  return {
-    latest,
-    previous,
-    delta,
-    daysBetween,
-    dailyRate,
-    arrow,
-    badge,
-    projectedDaysToBound,
-    projectedBound,
-    projectedDaysToCriticalMin,
-    criticalMin,
-  }
-}
-
-type ChartPoint = { x: number; y: number }
-
-const buildMonotonePath = (points: ChartPoint[]) => {
-  if (points.length < 2) return ''
-  const n = points.length
-  const x = points.map((p) => p.x)
-  const y = points.map((p) => p.y)
-  const dx = new Array<number>(n - 1)
-  const m = new Array<number>(n - 1)
-
-  for (let i = 0; i < n - 1; i += 1) {
-    const dxi = x[i + 1] - x[i]
-    dx[i] = dxi === 0 ? 1 : dxi
-    m[i] = (y[i + 1] - y[i]) / dx[i]
-  }
-
-  const t = new Array<number>(n)
-  t[0] = m[0]
-  t[n - 1] = m[n - 2]
-
-  for (let i = 1; i < n - 1; i += 1) {
-    const m0 = m[i - 1]
-    const m1 = m[i]
-    if (m0 === 0 || m1 === 0 || m0 * m1 <= 0) {
-      t[i] = 0
-    } else {
-      t[i] = (m0 + m1) / 2
-    }
-  }
-
-  for (let i = 0; i < n - 1; i += 1) {
-    const mi = m[i]
-    if (mi === 0) {
-      t[i] = 0
-      t[i + 1] = 0
-      continue
-    }
-    const a = t[i] / mi
-    const b = t[i + 1] / mi
-    const s = a * a + b * b
-    if (s > 9) {
-      const r = 3 / Math.sqrt(s)
-      t[i] = r * a * mi
-      t[i + 1] = r * b * mi
-    }
-  }
-
-  const fmt = (value: number) => Number(value.toFixed(2))
-  let d = `M ${fmt(x[0])},${fmt(y[0])}`
-
-  for (let i = 0; i < n - 1; i += 1) {
-    const h = x[i + 1] - x[i]
-    const c1x = x[i] + h / 3
-    const c1y = y[i] + (t[i] * h) / 3
-    const c2x = x[i + 1] - h / 3
-    const c2y = y[i + 1] - (t[i + 1] * h) / 3
-    d += ` C ${fmt(c1x)},${fmt(c1y)} ${fmt(c2x)},${fmt(c2y)} ${fmt(x[i + 1])},${fmt(
-      y[i + 1],
-    )}`
-  }
-
-  return d
-}
-
-const parseNumberWithFallback = (raw: string, fallback: number) => {
-  const value = Number(raw)
-  return Number.isFinite(value) ? value : fallback
-}
 
 const NOW_AT_BOOT = Date.now()
 const DEFAULT_UI_SETTINGS: UiSettings = {
@@ -377,17 +79,10 @@ function detectSystemType(entries: BioEntryForProfile[]): string {
 
 function App() {
   const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'parametros' | 'protocolos' | 'iluminacao' | 'inventario' | 'configuracoes'
+    'dashboard' | 'parametros' | 'protocolos' | 'iluminacao' | 'inventario' | 'diario' | 'configuracoes'
   >('dashboard')
   const [dashboardPeriodDays, setDashboardPeriodDays] = useState<7 | 30 | 90 | 365>(30)
   const [lightingPhases, setLightingPhases] = useState<LightingPhase[]>([])
-  const [isLightingModalOpen, setIsLightingModalOpen] = useState<boolean>(false)
-  const [lightingEditingId, setLightingEditingId] = useState<string | null>(null)
-  const [lightingEditName, setLightingEditName] = useState<string>('')
-  const [lightingEditTime, setLightingEditTime] = useState<string>('08:30')
-  const [lightingEditUv, setLightingEditUv] = useState<string>('0')
-  const [lightingEditWhite, setLightingEditWhite] = useState<string>('0')
-  const [lightingEditBlue, setLightingEditBlue] = useState<string>('0')
   const [syncState, setSyncState] = useState<SyncState>(
     isSupabaseEnabled ? 'syncing' : 'local',
   )
@@ -530,6 +225,8 @@ function App() {
     safeZones,
     safeZonesBase,
     cloudConsumptionRates,
+    bottleSettings,
+    handleChangeBottleSetting,
     tankSettings, setTankSettings,
     isSavingTankSettings,
     hasPendingTankSettingsChanges,
@@ -604,43 +301,25 @@ function App() {
     safeLocalStorageSetItem(lightingPhasesStorageKey, JSON.stringify(lightingPhases))
   }, [lightingPhases, lightingPhasesStorageKey, safeLocalStorageSetItem])
 
-  const latestByParameter = useMemo(() => {
-    const map = new Map<ParameterKey, ParameterEntry>()
-    for (const entry of entries) {
-      const current = map.get(entry.parameter)
-      if (
-        !current ||
-        new Date(entry.measuredAt).getTime() > new Date(current.measuredAt).getTime()
-      ) {
-        map.set(entry.parameter, entry)
-      }
-    }
-    return parameterDefinitions.map((definition) => ({
-      definition,
-      latest: map.get(definition.key),
-    }))
-  }, [entries])
+  const {
+    isLightingModalOpen,
+    lightingEditName, setLightingEditName,
+    lightingEditTime, setLightingEditTime,
+    lightingEditUv, setLightingEditUv,
+    lightingEditWhite, setLightingEditWhite,
+    lightingEditBlue, setLightingEditBlue,
+    openEditLightingModal,
+    closeLightingModal,
+    handleSaveLightingPhase,
+  } = useLightingModal({ lightingPhases, setLightingPhases, authUser, enqueueCloudWrite })
 
-  const filteredEntries = useMemo(() => {
-    const threshold = nowMs - periodDays * 86400000
-    return entries
-      .filter((entry) => new Date(entry.measuredAt).getTime() >= threshold)
-      .filter((entry) =>
-        filterParameter === 'todos' ? true : entry.parameter === filterParameter,
-      )
-      .sort(
-        (a, b) => new Date(b.measuredAt).getTime() - new Date(a.measuredAt).getTime(),
-      )
-  }, [entries, filterParameter, nowMs, periodDays])
-
-  const dashboardEntries = useMemo(() => {
-    const threshold = nowMs - dashboardPeriodDays * 86400000
-    return entries
-      .filter((entry) => new Date(entry.measuredAt).getTime() >= threshold)
-      .sort(
-        (a, b) => new Date(a.measuredAt).getTime() - new Date(b.measuredAt).getTime(),
-      )
-  }, [dashboardPeriodDays, entries, nowMs])
+  const {
+    latestByParameter,
+    filteredEntries,
+    dashboardEntries,
+    parameterInsights,
+    latestValuesMap,
+  } = useParameterInsights({ entries, safeZones, nowMs, periodDays, filterParameter, dashboardPeriodDays })
 
   const chartPaths = useMemo(() => {
     if (dashboardEntries.length === 0) return []
@@ -770,22 +449,6 @@ function App() {
       )
   }, [dashboardEntries, safeZones])
 
-  const parameterInsights = useMemo(() => {
-    const map = new Map<ParameterKey, ParameterInsight>()
-    for (const definition of parameterDefinitions) {
-      map.set(definition.key, computeParameterInsight(entries, definition, safeZones))
-    }
-    return map
-  }, [entries, safeZones])
-
-  const latestValuesMap = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const { definition, latest } of latestByParameter) {
-      if (latest) map.set(definition.key, latest.value)
-    }
-    return map
-  }, [latestByParameter])
-
   const smartTips = useSmartTips({
     latestByParameter,
     safeZones,
@@ -858,6 +521,39 @@ function App() {
         }
       : undefined,
   })
+
+  const eventLogStorageKey = isSupabaseEnabled
+    ? authUser ? `reef-system-event-log:${authUser.id}` : null
+    : 'reef-system-event-log'
+
+  const { eventLogs, addEventLog, deleteEventLog, logEvent } = useEventLog({
+    storageKey: eventLogStorageKey,
+  })
+
+  // ── Auto-log wrappers ──
+  const handleSubmitWithLog = useCallback(async (event: React.FormEvent) => {
+    await handleSubmit(event)
+    const definition = parameterDefinitions.find((d) => d.key === parameter)
+    const numVal = parseFloat(value.replace(',', '.'))
+    if (definition && Number.isFinite(numVal)) {
+      logEvent('medicao', `Medição: ${definition.label}`, note, numVal, definition.unit)
+    }
+  }, [handleSubmit, logEvent, parameter, value, note])
+
+  const handleToggleProtocolCheckWithLog = useCallback(async (key: string, dayIndex: number) => {
+    await handleToggleProtocolCheck(key, dayIndex)
+    const def = protocolDefinitions.find((d) => d.key === key)
+    if (def) logEvent('dosagem', def.label)
+  }, [handleToggleProtocolCheck, logEvent, protocolDefinitions])
+
+  const handleAddBioWithLog = useCallback(async (event: React.FormEvent) => {
+    const prevCount = bioEntries.length
+    await handleAddBio(event)
+    if (bioEntries.length !== prevCount || bioEditingId) {
+      const label = bioNickname.trim() || bioName.trim()
+      if (label) logEvent('animal', bioEditingId ? `Animal atualizado: ${label}` : `Animal adicionado: ${label}`)
+    }
+  }, [handleAddBio, logEvent, bioEntries.length, bioEditingId, bioNickname, bioName])
 
   // ── Load water changes from cloud on sync ──
   useEffect(() => {
@@ -1020,49 +716,19 @@ function App() {
     return [...safeZoneAlertCards, ...insightCards]
   }, [parameterInsights, safeZoneAlertCards])
 
-  const openEditLightingModal = (phase: LightingPhase) => {
-    setLightingEditingId(phase.id)
-    setLightingEditName(phase.name)
-    setLightingEditTime(phase.time)
-    setLightingEditUv(String(phase.uv))
-    setLightingEditWhite(String(phase.white))
-    setLightingEditBlue(String(phase.blue))
-    setIsLightingModalOpen(true)
-  }
-
-  const closeLightingModal = () => {
-    setIsLightingModalOpen(false)
-    setLightingEditingId(null)
-  }
-
-  const handleSaveLightingPhase = async () => {
-    if (!lightingEditingId) return
-    const next: LightingPhase[] = lightingPhases
-      .map((item) =>
-        item.id === lightingEditingId
-          ? {
-              ...item,
-              name: lightingEditName.trim() || item.name,
-              time: lightingEditTime,
-              uv: parseNumberWithFallback(lightingEditUv, item.uv),
-              white: parseNumberWithFallback(lightingEditWhite, item.white),
-              blue: parseNumberWithFallback(lightingEditBlue, item.blue),
-            }
-          : item,
-      )
-      .slice()
-      .sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time))
-
-    setLightingPhases(next)
-    setIsLightingModalOpen(false)
-    if (isSupabaseEnabled && authUser) {
-      const saved = next.find((item) => item.id === lightingEditingId)
-      if (!saved) return
-      enqueueCloudWrite('Fase de iluminação', async () => {
-        await upsertCloudLightingPhase(saved, authUser.id)
-      })
+  const bottleForecastCards = useMemo(() => {
+    const cards: Array<{ label: string; daysRemaining: number; mlPerDay: number; mlRemaining: number }> = []
+    for (const [parameter, bottle] of bottleSettings) {
+      const { dailyDoseMl, bottleMlRemaining } = bottle
+      if (!dailyDoseMl || !bottleMlRemaining || dailyDoseMl <= 0 || bottleMlRemaining <= 0) continue
+      const daysRemaining = bottleMlRemaining / dailyDoseMl
+      if (!Number.isFinite(daysRemaining)) continue
+      const definition = parameterDefinitions.find((d) => d.key === parameter)
+      const label = definition?.label ?? parameter
+      cards.push({ label, daysRemaining, mlPerDay: dailyDoseMl, mlRemaining: bottleMlRemaining })
     }
-  }
+    return cards.sort((a, b) => a.daysRemaining - b.daysRemaining)
+  }, [bottleSettings])
 
   if (isSupabaseEnabled && isAuthLoading) {
     return (
@@ -1242,6 +908,17 @@ function App() {
           </span>
         </button>
         <button
+          className={activeTab === 'diario' ? 'active' : ''}
+          onClick={() => setActiveTab('diario')}
+        >
+          <span className="tab-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+            </svg>
+            <span>Diário</span>
+          </span>
+        </button>
+        <button
           className={activeTab === 'configuracoes' ? 'active' : ''}
           onClick={() => setActiveTab('configuracoes')}
         >
@@ -1267,10 +944,11 @@ function App() {
           chartPaths={chartPaths}
           dashboardAlertCards={dashboardAlertCards}
           dashboardInsightCards={dashboardInsightCards}
-          dayLabel={dayLabels[(todayProtocolDayIndex + 6) % 7]}
+          bottleForecastCards={bottleForecastCards}
+          dayLabel={DAY_LABELS[(todayProtocolDayIndex + 6) % 7]}
           protocolsDueToday={protocolsDueToday}
           formatDate={formatDate}
-          onToggleProtocolCheck={(key, dayIndex) => void handleToggleProtocolCheck(key, dayIndex)}
+          onToggleProtocolCheck={(key, dayIndex) => void handleToggleProtocolCheckWithLog(key, dayIndex)}
           todayProtocolDayIndex={todayProtocolDayIndex}
           smartTips={smartTips}
           animalsAtRisk={animalsAtRisk}
@@ -1293,7 +971,7 @@ function App() {
           setValue={setValue}
           note={note}
           setNote={setNote}
-          onSubmit={handleSubmit}
+          onSubmit={handleSubmitWithLog}
           lastMeasurementFeedback={lastMeasurementFeedback}
           formatDate={formatDate}
           formatSigned={formatSigned}
@@ -1315,9 +993,9 @@ function App() {
           latestProtocolByKey={latestProtocolByKey}
           formatDays={formatDays}
           formatDate={formatDate}
-          dayLabels={dayLabels}
+          DAY_LABELS={DAY_LABELS}
           isDoneThisWeek={isDoneThisWeek}
-          onToggleProtocolCheck={(key, dayIndex) => void handleToggleProtocolCheck(key, dayIndex)}
+          onToggleProtocolCheck={(key, dayIndex) => void handleToggleProtocolCheckWithLog(key, dayIndex)}
           openAddRoutineModal={openAddRoutineModal}
           openEditRoutineModal={openEditRoutineModal}
           onDeleteRoutine={(key) => void handleDeleteRoutine(key)}
@@ -1396,7 +1074,7 @@ function App() {
 
       {activeTab === 'inventario' && (
         <InventoryTab
-          onSubmitBio={(event) => void handleAddBio(event)}
+          onSubmitBio={(event) => void handleAddBioWithLog(event)}
           bioType={bioType}
           setBioType={setBioType}
           bioName={bioName}
@@ -1429,6 +1107,14 @@ function App() {
           onDeleteBioEntry={handleDeleteBioEntry}
           compatibilityWarnings={compatibilityWarnings}
           animalsAtRisk={animalsAtRisk}
+        />
+      )}
+
+      {activeTab === 'diario' && (
+        <DiaryTab
+          eventLogs={eventLogs}
+          addEventLog={addEventLog}
+          deleteEventLog={deleteEventLog}
         />
       )}
 
@@ -1485,6 +1171,8 @@ function App() {
               })
             }
           }}
+          bottleSettings={bottleSettings}
+          onChangeBottleSetting={handleChangeBottleSetting}
         />
       )}
     </main>

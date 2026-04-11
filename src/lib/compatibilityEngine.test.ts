@@ -13,10 +13,6 @@ const coral = (name: string, scientificName = '') =>
 const invert = (name: string, scientificName = '') =>
   ({ name, scientificName, type: 'invertebrado' as const })
 
-const warnings = (...entries: ReturnType<typeof fish>[]) =>
-  (newEntry: ReturnType<typeof fish>, dbHints?: DbHints, tank?: TankContext) =>
-    checkCompatibility(newEntry, entries, dbHints, tank).warnings
-
 // ── Tangs ─────────────────────────────────────────────────────────────────────
 
 describe('Tangs', () => {

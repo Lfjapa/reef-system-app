@@ -13,34 +13,7 @@ import {
   upsertCloudProtocolDefinition,
   upsertCloudProtocolLog,
 } from '../lib/cloudStore'
-
-type ProtocolKey = string
-
-type ProtocolDefinition = {
-  key: ProtocolKey
-  label: string
-  days: number[]
-  quantity: number | null
-  unit: string
-}
-
-type ProtocolLog = {
-  id: string
-  protocolKey: ProtocolKey
-  performedAt: string
-  note: string
-}
-
-type ProtocolCheck = {
-  id: string
-  protocolKey: ProtocolKey
-  weekStart: string
-  dayIndex: number
-  checkedAt: string
-  quantity: number | null
-  unit: string
-  note: string
-}
+import type { ProtocolKey, ProtocolDefinition, ProtocolLog, ProtocolCheck } from '../types'
 
 const defaultProtocolDefinitions: ProtocolDefinition[] = defaultProtocolDefinitionsData
 

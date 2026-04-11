@@ -4,31 +4,7 @@ import type { User } from '@supabase/supabase-js'
 import { isSupabaseEnabled } from '../lib/supabase'
 import { deleteCloudParameter, upsertCloudParameter } from '../lib/cloudStore'
 import { parameterDefinitionsData } from '../data/defaults'
-
-type ParameterKey = string
-
-type ParameterEntry = {
-  id: string
-  parameter: ParameterKey
-  value: number
-  measuredAt: string
-  note: string
-}
-
-type ProtocolLog = {
-  id: string
-  protocolKey: string
-  performedAt: string
-  note: string
-}
-
-type ProtocolDefinition = {
-  key: string
-  label: string
-  days: number[]
-  quantity: number | null
-  unit: string
-}
+import type { ParameterKey, ParameterEntry, ProtocolLog, ProtocolDefinition } from '../types'
 
 const MIN_RATE_INTERVAL_DAYS = 0.25
 

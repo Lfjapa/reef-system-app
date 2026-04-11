@@ -18,21 +18,11 @@ import {
 } from '../lib/catalogUtils'
 import type { BioCatalogEntry, BioType } from '../lib/catalogUtils'
 import { seedBioCatalogData } from '../data/defaults'
+import type { BioEntry } from '../types'
 
 export type { BioType, BioCatalogEntry }
 
 const seedBioCatalog: BioCatalogEntry[] = seedBioCatalogData
-
-type BioEntry = {
-  id: string
-  type: BioType
-  name: string
-  scientificName: string
-  position: string
-  note: string
-  nickname: string
-  createdAt: string
-}
 
 type BioRequirementPreview = {
   scientificName: string
@@ -264,14 +254,14 @@ export function useBioEntries({ authUser, activeTab, syncReloadNonce, enqueueClo
   const handleAddBio = useCallback(
     async (event: React.FormEvent) => {
       event.preventDefault()
-      if (!bioName.trim()) return
+      if (!bioName.trim() && !bioNickname.trim()) return
       const catalogMatch = findCatalogMatch(bioName) ?? findInCatalog(bioName)
       const entryId = bioEditingId ?? crypto.randomUUID()
       const existing = bioEntries.find((item) => item.id === entryId)
       const newBioEntry: BioEntry = {
         id: entryId,
         type: catalogMatch?.type ?? bioType,
-        name: bioName.trim(),
+        name: bioName.trim() || bioNickname.trim(),
         scientificName: bioScientificName.trim() || catalogMatch?.scientificName || '',
         position: bioPosition.trim() || catalogMatch?.position || '',
         note: bioNote.trim() || catalogMatch?.note || '',
@@ -544,27 +534,44 @@ export function useBioEntries({ authUser, activeTab, syncReloadNonce, enqueueClo
 
   const faunaItems = useMemo(() => {
     const normalizedSearch = normalize(faunaSearch)
-    const filtered = bioEntries
-      .filter((item) => item.type === faunaSubmenu)
-      .filter((item) =>
-        normalizedSearch
-          ? `${normalize(item.name)} ${normalize(item.scientificName)}`.includes(normalizedSearch)
-          : true,
-      )
-      .slice()
+    const byType = bioEntries.filter((item) => item.type === faunaSubmenu)
 
     if (!normalizedSearch) {
-      return filtered.sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      )
+      return byType
+        .slice()
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     }
 
-    return filtered
+    const tokens = normalizedSearch.split(' ').filter((t) => t.length >= 2)
+
+    return byType
       .map((item) => {
-        const nameScore = scoreTextMatch(normalizedSearch, normalize(item.name))
-        const scientificScore = scoreTextMatch(normalizedSearch, normalize(item.scientificName))
-        return { item, score: Math.max(nameScore, scientificScore) }
+        const texts = [
+          normalize(item.name),
+          normalize(item.scientificName),
+          item.nickname ? normalize(item.nickname) : '',
+        ].filter(Boolean)
+
+        // Full query against each text field
+        let best = 0
+        for (const t of texts) {
+          const s = scoreTextMatch(normalizedSearch, t)
+          if (s > best) best = s
+        }
+
+        // OR-token fallback for multi-word queries
+        if (best === 0 && tokens.length > 1) {
+          for (const token of tokens) {
+            for (const t of texts) {
+              const s = scoreTextMatch(token, t)
+              if (s > best) best = s
+            }
+          }
+        }
+
+        return { item, score: best }
       })
+      .filter(({ score }) => score > 0)
       .sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score
         return new Date(b.item.createdAt).getTime() - new Date(a.item.createdAt).getTime()

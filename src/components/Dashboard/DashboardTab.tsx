@@ -2,28 +2,7 @@ import { useState, useRef, type MouseEvent } from 'react'
 import HealthScoreCircle from './HealthScoreCircle'
 import type { SmartTip } from '../../hooks/useSmartTips'
 import type { AnimalRiskItem } from '../../hooks/useAnimalsAtRisk'
-
-type TrendArrow = 'up' | 'down' | 'flat'
-type InsightBadge = 'Ideal' | 'Atenção' | 'Crítico' | 'Sem faixa'
-
-type ParameterDefinition = {
-  key: string
-  label: string
-  unit: string
-}
-
-type ParameterEntry = {
-  measuredAt: string
-  value: number
-}
-
-type ParameterInsight = {
-  arrow: TrendArrow
-  badge: InsightBadge
-  dailyRate: number | null
-  projectedDaysToBound: number | null
-  projectedDaysToCriticalMin: number | null
-}
+import type { TrendArrow, ParameterDefinition, ParameterEntry, ParameterInsight } from '../../types'
 
 type LatestByParameterItem = {
   definition: ParameterDefinition
@@ -82,6 +61,7 @@ type Props = {
   chartPaths: ChartLane[]
   dashboardAlertCards: string[]
   dashboardInsightCards: string[]
+  bottleForecastCards: Array<{ label: string; daysRemaining: number; mlPerDay: number; mlRemaining: number }>
   dayLabel: string
   protocolsDueToday: ProtocolDueItem[]
   formatDate: (iso: string) => string
@@ -118,6 +98,7 @@ export default function DashboardTab({
   chartPaths,
   dashboardAlertCards,
   dashboardInsightCards,
+  bottleForecastCards,
   dayLabel,
   protocolsDueToday,
   formatDate,
@@ -515,6 +496,37 @@ export default function DashboardTab({
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {bottleForecastCards.length > 0 && (
+          <div className="bottle-forecast-section">
+            <h3 className="bottle-forecast-title">Frascos de reagente</h3>
+            <div className="bottle-forecast-list">
+              {bottleForecastCards.map(({ label, daysRemaining, mlPerDay, mlRemaining }) => {
+                const days = Math.floor(daysRemaining)
+                const isWarning = days <= 7
+                const isAlert = days <= 3
+                const fmtMl = (v: number) => new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(v)
+                return (
+                  <div
+                    key={label}
+                    className={`bottle-card${isAlert ? ' bottle-card--alert' : isWarning ? ' bottle-card--warning' : ''}`}
+                  >
+                    <span className="bottle-icon">{isAlert ? '🪫' : isWarning ? '⚠️' : '🧴'}</span>
+                    <div className="bottle-body">
+                      <span className="bottle-label">{label}</span>
+                      <span className="bottle-detail">
+                        {fmtMl(mlRemaining)} ml restantes · usa {fmtMl(mlPerDay)} ml/dia
+                      </span>
+                    </div>
+                    <div className={`bottle-days${isAlert ? ' bottle-days--alert' : isWarning ? ' bottle-days--warning' : ''}`}>
+                      ~{days} dias
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )}
 

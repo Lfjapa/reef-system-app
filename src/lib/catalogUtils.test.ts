@@ -42,9 +42,10 @@ describe('scoreTextMatch', () => {
     expect(scoreTextMatch('oral', 'coral')).toBe(70)
   })
 
-  it('retorna 60 para todos os tokens presentes', () => {
-    expect(scoreTextMatch('peixe palha', 'peixe-palhaco')).toBe(0) // não é substring
-    expect(scoreTextMatch('coral lps', 'acropora coral lps')).toBe(60)
+  it('retorna 60 para todos os tokens presentes (não contíguos)', () => {
+    // tokens estão presentes mas não como substring contígua após espaço
+    expect(scoreTextMatch('coral sps', 'sps coral')).toBe(60)
+    expect(scoreTextMatch('peixe palha', 'peixe-palhaco')).toBe(60) // 'peixe' e 'palha' são substrings
   })
 
   it('retorna 0 para query vazia', () => {

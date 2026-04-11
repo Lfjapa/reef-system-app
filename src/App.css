@@ -2595,3 +2595,461 @@
   margin-bottom: 2px;
   font-style: italic;
 }
+
+/* ── Diário de Eventos ─────────────────────────────────────────────────────── */
+
+.diary-section {
+  display: grid;
+  gap: 16px;
+  padding-top: 8px;
+}
+
+.diary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.diary-header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.diary-title {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.diary-count {
+  font-size: 0.8rem;
+  color: var(--muted-2);
+}
+
+.diary-add-btn {
+  white-space: nowrap;
+}
+
+/* Form */
+.diary-form {
+  background: var(--card);
+  border: 1px solid var(--border-2);
+  border-radius: 12px;
+  padding: 16px;
+  display: grid;
+  gap: 14px;
+}
+
+.diary-form-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.diary-type-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.diary-type-btn:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.diary-type-btn--active {
+  background: var(--brand-ink);
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.diary-form-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.diary-field {
+  display: grid;
+  gap: 5px;
+  font-size: 0.82rem;
+  color: var(--muted-2);
+}
+
+.diary-field-hint {
+  font-weight: 400;
+  color: var(--muted-2);
+  opacity: 0.7;
+}
+
+.diary-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.diary-textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+}
+
+.diary-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Filters */
+.diary-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.diary-filter-btn {
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--muted-2);
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all 0.15s;
+}
+
+.diary-filter-btn:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.diary-filter-btn--active {
+  background: var(--brand-ink);
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+/* Feed */
+.diary-empty {
+  text-align: center;
+  color: var(--muted-2);
+  font-size: 0.85rem;
+  padding: 32px 16px;
+  background: var(--card);
+  border-radius: 10px;
+  border: 1px dashed var(--border-2);
+}
+
+.diary-feed {
+  display: grid;
+  gap: 20px;
+}
+
+.diary-day-group {
+  display: grid;
+  gap: 8px;
+}
+
+.diary-day-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0 2px;
+}
+
+.diary-card {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  gap: 10px;
+  background: var(--card);
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  padding: 12px;
+  align-items: start;
+  transition: border-color 0.15s;
+}
+
+.diary-card:hover {
+  border-color: var(--border);
+}
+
+.diary-card--problema {
+  border-left: 3px solid var(--danger);
+}
+
+.diary-card--tratamento {
+  border-left: 3px solid var(--warning-color);
+}
+
+.diary-card--medicao {
+  border-left: 3px solid var(--brand);
+}
+
+.diary-card--tpa {
+  border-left: 3px solid #3b82f6;
+}
+
+.diary-card--dosagem {
+  border-left: 3px solid var(--success);
+}
+
+.diary-card-icon {
+  font-size: 1.2rem;
+  line-height: 1.4;
+  text-align: center;
+  margin-top: 1px;
+}
+
+.diary-card-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.diary-card-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.diary-card-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.diary-card-time {
+  font-size: 0.72rem;
+  color: var(--muted-2);
+  white-space: nowrap;
+}
+
+.diary-card-amount {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--brand);
+  background: var(--info-bg);
+  border: 1px solid var(--info-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  width: fit-content;
+}
+
+.diary-card-note {
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.diary-card-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: fit-content;
+}
+
+.diary-delete-btn {
+  background: none;
+  border: none;
+  color: var(--muted-2);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.diary-card:hover .diary-delete-btn {
+  opacity: 1;
+}
+
+.diary-delete-btn:hover {
+  color: var(--danger);
+}
+
+.diary-delete-confirm {
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-text);
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.diary-delete-cancel {
+  background: none;
+  border: 1px solid var(--border-2);
+  color: var(--muted-2);
+  cursor: pointer;
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+
+/* ── Bottle Settings (TankSettingsTab) ───────────────────────────────────── */
+
+.bottle-settings-section {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-1);
+}
+
+.bottle-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.bottle-setting-card {
+  background: var(--card);
+  border: 1px solid var(--border-1);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.bottle-setting-label {
+  font-size: 0.85rem;
+  color: var(--fg-1);
+}
+
+.bottle-setting-fields {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.bottle-setting-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+  font-size: 0.72rem;
+  color: var(--muted-2);
+}
+
+.bottle-input {
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.82rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  color: var(--fg-1);
+}
+
+.bottle-days-preview {
+  font-size: 0.78rem;
+  color: var(--success-text, #16a34a);
+  font-weight: 600;
+}
+
+.bottle-days-preview--warning {
+  color: var(--warning-text, #b45309);
+}
+
+.bottle-days-preview--alert {
+  color: var(--danger-text, #dc2626);
+}
+
+/* ── Bottle Forecast Cards (DashboardTab) ────────────────────────────────── */
+
+.bottle-forecast-section {
+  margin-top: 1.5rem;
+}
+
+.bottle-forecast-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.5rem;
+}
+
+.bottle-forecast-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.bottle-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--border-1);
+  border-radius: 10px;
+  padding: 0.6rem 1rem;
+}
+
+.bottle-card--warning {
+  border-color: var(--warning-border, #fcd34d);
+  background: var(--warning-bg, #fffbeb);
+}
+
+.bottle-card--alert {
+  border-color: var(--danger-border, #fca5a5);
+  background: var(--danger-bg, #fef2f2);
+}
+
+.bottle-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.bottle-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.bottle-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--fg-1);
+}
+
+.bottle-detail {
+  font-size: 0.75rem;
+  color: var(--muted-2);
+}
+
+.bottle-days {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--success-text, #16a34a);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.bottle-days--warning {
+  color: var(--warning-text, #b45309);
+}
+
+.bottle-days--alert {
+  color: var(--danger-text, #dc2626);
+}

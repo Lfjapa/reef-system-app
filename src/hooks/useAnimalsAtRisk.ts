@@ -1,13 +1,5 @@
 import { useMemo } from 'react'
-
-type BioType = 'peixe' | 'coral' | 'invertebrado'
-
-type BioEntry = {
-  id: string
-  type: BioType
-  name: string
-  scientificName: string
-}
+import type { BioEntry, BioType } from '../types'
 
 type BioDeepDivePreview = {
   reefCompatible: string | null
