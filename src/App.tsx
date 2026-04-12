@@ -993,7 +993,7 @@ function App() {
           latestProtocolByKey={latestProtocolByKey}
           formatDays={formatDays}
           formatDate={formatDate}
-          DAY_LABELS={DAY_LABELS}
+          dayLabels={DAY_LABELS}
           isDoneThisWeek={isDoneThisWeek}
           onToggleProtocolCheck={(key, dayIndex) => void handleToggleProtocolCheckWithLog(key, dayIndex)}
           openAddRoutineModal={openAddRoutineModal}
