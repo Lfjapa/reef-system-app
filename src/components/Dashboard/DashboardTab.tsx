@@ -249,18 +249,12 @@ export default function DashboardTab({
       <div className="dashboard-body">
 
         {/* ── Alert Strip ── */}
-        {(criticalTips.length > 0 || dashboardAlertCards.length > 0 || animalsAtRisk.length > 0) && (
+        {(criticalTips.length > 0 || animalsAtRisk.length > 0) && (
           <div className="dashboard-alerts-strip">
             {criticalTips.map((tip) => (
               <div key={tip.id} className="dashboard-alert-banner">
                 <span style={{ fontWeight: 800 }}>!</span>
                 <span>{tip.message}</span>
-              </div>
-            ))}
-            {dashboardAlertCards.map((text) => (
-              <div key={text} className="dashboard-alert-banner dashboard-alert-banner--warning">
-                <span>⚠</span>
-                <span>{text}</span>
               </div>
             ))}
             {animalsAtRisk.map((animal) => (
